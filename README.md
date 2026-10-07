@@ -3,18 +3,15 @@
 > **"You ask the question. The agent chooses how to research it."**
 
 Haystack integration + reference wiring that turns SerpApi's specialized
-search verticals into composable Haystack tools. Implemented **through
-Phase 3** per PRD: shared client → Search/Jobs/Shopping components →
-Haystack tool integration.
+search verticals into composable Haystack tools: shared client →
+Search/Jobs/Shopping components → Haystack tool integration.
 
-## Status
+## What's included
 
-- [x] Phase 0 — Repository reconnaissance (`docs/architecture.md`)
-- [x] Phase 1 — `SerpApiClient` (auth, retries, timeouts, rate-limit, errors, logging, cache hooks)
-- [x] Phase 2 — `SerpApiGoogleSearch`, `SerpApiGoogleJobs`, `SerpApiGoogleShopping`
-- [x] Phase 3 — `ComponentTool` wrappers, toolsets, dynamic selection, planner, universal-agent factory
-- [ ] Phase 4 — News / Scholar / Patents / Forums / Images
-- [ ] Phase 5 — Maps / Flights / Hotels / Finance / Trends / Events
+- Repository reconnaissance notes (`docs/architecture.md`)
+- `SerpApiClient` (auth, retries, timeouts, rate-limit, errors, logging, cache hooks)
+- `SerpApiGoogleSearch`, `SerpApiGoogleJobs`, `SerpApiGoogleShopping`
+- `ComponentTool` wrappers, toolsets, dynamic selection, planner, universal-agent factory
 
 ## Layout
 
@@ -30,7 +27,7 @@ src/serpapi_haystack/
                  limits (budgets + parallel), observability
 tests/           client, models/utils, components/tools (mocked, no live key)
 examples/        basic_search, research_agent, shopping_agent, career_agent, universal_agent
-docs/            architecture.md (Phase 0 deliverable)
+docs/            architecture.md (reconnaissance + design notes)
 ```
 
 ## Quickstart
