@@ -1,4 +1,36 @@
-"""Normalized models package (PRD Sec 73-74)."""
-from .results import Evidence, JobResult, ProductResult, SearchResult
+from .results import (
+    EventResult,
+    Evidence,
+    FinanceResult,
+    FlightResult,
+    ForumResult,
+    HotelResult,
+    ImageResult,
+    JobResult,
+    NewsResult,
+    PatentResult,
+    PlaceResult,
+    ProductResult,
+    ScholarResult,
+    SearchResult,
+    TrendResult,
+)
 
-__all__ = ["SearchResult", "JobResult", "ProductResult", "Evidence"]
+__all__ = [
+    "SearchResult",
+    "JobResult",
+    "ProductResult",
+    "NewsResult",
+    "ScholarResult",
+    "PatentResult",
+    "ForumResult",
+    "ImageResult",
+    "PlaceResult",
+    "FlightResult",
+    "HotelResult",
+    "FinanceResult",
+    "TrendResult",
+    "EventResult",
+    "Evidence",
+]
+

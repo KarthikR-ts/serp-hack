@@ -6,3 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# PRD and raw spec documents
+serpapi_haystack_universal_web_intelligence_prd.md
+*.prd.md

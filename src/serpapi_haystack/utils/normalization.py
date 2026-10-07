@@ -73,6 +73,17 @@ VERTICAL_WEIGHTS: dict[str, RankingWeights] = {
     "search": RankingWeights(),
     "jobs": RankingWeights(relevance=0.35, constraint_match=0.30, freshness=0.15, source_quality=0.10, confidence=0.10),
     "shopping": RankingWeights(relevance=0.35, constraint_match=0.30, freshness=0.05, source_quality=0.15, confidence=0.15),
+    "news": RankingWeights(relevance=0.30, constraint_match=0.10, freshness=0.40, source_quality=0.10, confidence=0.10),
+    "scholar": RankingWeights(relevance=0.30, constraint_match=0.10, freshness=0.10, source_quality=0.40, confidence=0.10),
+    "patents": RankingWeights(relevance=0.35, constraint_match=0.20, freshness=0.10, source_quality=0.25, confidence=0.10),
+    "forums": RankingWeights(relevance=0.35, constraint_match=0.15, freshness=0.25, source_quality=0.15, confidence=0.10),
+    "images": RankingWeights(relevance=0.50, constraint_match=0.10, freshness=0.10, source_quality=0.20, confidence=0.10),
+    "maps": RankingWeights(relevance=0.35, constraint_match=0.25, freshness=0.10, source_quality=0.20, confidence=0.10),
+    "flights": RankingWeights(relevance=0.30, constraint_match=0.40, freshness=0.10, source_quality=0.10, confidence=0.10),
+    "hotels": RankingWeights(relevance=0.30, constraint_match=0.35, freshness=0.10, source_quality=0.15, confidence=0.10),
+    "finance": RankingWeights(relevance=0.30, constraint_match=0.20, freshness=0.35, source_quality=0.10, confidence=0.05),
+    "trends": RankingWeights(relevance=0.35, constraint_match=0.15, freshness=0.35, source_quality=0.10, confidence=0.05),
+    "events": RankingWeights(relevance=0.35, constraint_match=0.25, freshness=0.25, source_quality=0.10, confidence=0.05),
 }
 
 _TRUSTED_DOMAINS = (

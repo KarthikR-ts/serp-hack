@@ -155,7 +155,7 @@ class Evidence:
 
     source_url: str
     source_title: str
-    source_type: str  # e.g. organic, job, product
+    source_type: str  # e.g. organic, job, product, news, scholar, etc.
     extracted_claim: str
     confidence: Confidence = "medium"
     timestamp: str | None = None
@@ -164,3 +164,392 @@ class Evidence:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+# --- Phase 4 Models ---
+
+@dataclass
+class NewsResult:
+    """Normalized Google News result."""
+
+    title: str
+    url: str
+    snippet: str = ""
+    source: str = ""
+    date: str | None = None
+    thumbnail: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "NewsResult":
+        return cls(
+            title=str(item.get("title", "") or ""),
+            url=str(item.get("link", "") or item.get("url", "") or ""),
+            snippet=str(item.get("snippet", "") or ""),
+            source=str(item.get("source", "") or (item.get("source", {}) if isinstance(item.get("source"), str) else item.get("source", {}).get("name", "")) or ""),
+            date=item.get("date"),
+            thumbnail=item.get("thumbnail"),
+            metadata={k: v for k, v in item.items() if k not in {"title", "link", "snippet"}},
+        )
+
+
+@dataclass
+class ScholarResult:
+    """Normalized Google Scholar paper/research result."""
+
+    title: str
+    url: str = ""
+    snippet: str = ""
+    authors: str = ""
+    publication: str = ""
+    citations: int | None = None
+    year: str | None = None
+    pdf_url: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "ScholarResult":
+        publication_info = item.get("publication_info") or {}
+        summary = publication_info.get("summary", "")
+        inline_links = item.get("inline_links") or {}
+        cited_by = inline_links.get("cited_by") or {}
+        resources = item.get("resources") or []
+        pdf = None
+        for r in resources:
+            if isinstance(r, dict) and r.get("file_format") == "PDF":
+                pdf = r.get("link")
+                break
+
+        return cls(
+            title=str(item.get("title", "") or ""),
+            url=str(item.get("link", "") or item.get("result_id", "") or ""),
+            snippet=str(item.get("snippet", "") or ""),
+            authors=str(summary),
+            publication=str(publication_info.get("journal", summary)),
+            citations=cited_by.get("total"),
+            year=str(item.get("year", "")) if item.get("year") else None,
+            pdf_url=pdf,
+            metadata={k: v for k, v in item.items() if k not in {"title", "link", "snippet"}},
+        )
+
+
+@dataclass
+class PatentResult:
+    """Normalized Google Patents result."""
+
+    title: str
+    url: str = ""
+    snippet: str = ""
+    patent_number: str = ""
+    assignee: str = ""
+    filing_date: str | None = None
+    grant_date: str | None = None
+    pdf_url: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "PatentResult":
+        return cls(
+            title=str(item.get("title", "") or ""),
+            url=str(item.get("pdf", "") or item.get("link", "") or ""),
+            snippet=str(item.get("snippet", "") or ""),
+            patent_number=str(item.get("patent_id", "") or item.get("patent_number", "") or ""),
+            assignee=str(item.get("assignee", "") or ""),
+            filing_date=item.get("filing_date"),
+            grant_date=item.get("grant_date"),
+            pdf_url=item.get("pdf"),
+            metadata={k: v for k, v in item.items() if k not in {"title", "link"}},
+        )
+
+
+@dataclass
+class ForumResult:
+    """Normalized Forum/Discussion result."""
+
+    title: str
+    url: str
+    snippet: str = ""
+    forum_name: str = ""
+    author: str = ""
+    date: str | None = None
+    replies_count: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "ForumResult":
+        return cls(
+            title=str(item.get("title", "") or ""),
+            url=str(item.get("link", "") or item.get("url", "") or ""),
+            snippet=str(item.get("snippet", "") or ""),
+            forum_name=str(item.get("source", "") or item.get("displayed_link", "") or ""),
+            author=str(item.get("author", "") or ""),
+            date=item.get("date"),
+            replies_count=item.get("replies"),
+            metadata={k: v for k, v in item.items() if k not in {"title", "link"}},
+        )
+
+
+@dataclass
+class ImageResult:
+    """Normalized Google Images result."""
+
+    title: str
+    image_url: str
+    source_url: str = ""
+    source_name: str = ""
+    width: int | None = None
+    height: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "ImageResult":
+        return cls(
+            title=str(item.get("title", "") or ""),
+            image_url=str(item.get("original", "") or item.get("thumbnail", "") or ""),
+            source_url=str(item.get("link", "") or ""),
+            source_name=str(item.get("source", "") or ""),
+            width=item.get("original_width"),
+            height=item.get("original_height"),
+            metadata={k: v for k, v in item.items() if k not in {"title", "original", "link"}},
+        )
+
+
+# --- Phase 5 Models ---
+
+@dataclass
+class PlaceResult:
+    """Normalized Google Maps / Local result."""
+
+    title: str
+    address: str = ""
+    rating: float | None = None
+    reviews: int | None = None
+    phone: str = ""
+    price_level: str = ""
+    category: str = ""
+    latitude: float | None = None
+    longitude: float | None = None
+    url: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "PlaceResult":
+        gps = item.get("gps_coordinates") or {}
+        return cls(
+            title=str(item.get("title", "") or ""),
+            address=str(item.get("address", "") or ""),
+            rating=float(item.get("rating")) if item.get("rating") is not None else None,
+            reviews=int(item.get("reviews")) if item.get("reviews") is not None else None,
+            phone=str(item.get("phone", "") or ""),
+            price_level=str(item.get("price", "") or ""),
+            category=str(item.get("type", "") or item.get("category", "") or ""),
+            latitude=gps.get("latitude"),
+            longitude=gps.get("longitude"),
+            url=str(item.get("link", "") or item.get("website", "") or ""),
+            metadata={k: v for k, v in item.items() if k not in {"title", "address"}},
+        )
+
+
+@dataclass
+class FlightResult:
+    """Normalized Google Flights result."""
+
+    airline: str
+    flight_number: str = ""
+    departure: str = ""
+    arrival: str = ""
+    duration: str = ""
+    price: str = ""
+    stops: int = 0
+    carbon_emissions: str = ""
+    url: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "FlightResult":
+        legs = item.get("flights") or []
+        first_leg = legs[0] if legs else {}
+        arr = first_leg.get("arrival_airport", {}).get("name", "")
+        dep = first_leg.get("departure_airport", {}).get("name", "")
+        airline = first_leg.get("airline", "") or item.get("airline", "")
+        price = str(item.get("price", "") or "")
+        return cls(
+            airline=str(airline),
+            flight_number=str(first_leg.get("flight_number", "")),
+            departure=str(dep),
+            arrival=str(arr),
+            duration=str(item.get("total_duration", "") or item.get("duration", "")),
+            price=price,
+            stops=len(legs) - 1 if legs else item.get("stops", 0),
+            carbon_emissions=str(item.get("carbon_emissions", {}).get("this_flight", "")),
+            url=str(item.get("link", "")),
+            metadata={k: v for k, v in item.items() if k not in {"airline", "price"}},
+        )
+
+
+@dataclass
+class HotelResult:
+    """Normalized Google Hotels result."""
+
+    name: str
+    price: str = ""
+    rating: float | None = None
+    reviews: int | None = None
+    location: str = ""
+    amenities: list[str] = field(default_factory=list)
+    url: str = ""
+    image: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "HotelResult":
+        rate = item.get("rate_per_night", {}) or {}
+        return cls(
+            name=str(item.get("name", "") or item.get("title", "") or ""),
+            price=str(rate.get("lowest", "") or item.get("price", "") or ""),
+            rating=float(item.get("overall_rating")) if item.get("overall_rating") is not None else None,
+            reviews=int(item.get("reviews")) if item.get("reviews") is not None else None,
+            location=str(item.get("location", "") or ""),
+            amenities=item.get("amenities") or [],
+            url=str(item.get("link", "") or ""),
+            image=item.get("images", [{}])[0].get("thumbnail") if item.get("images") else None,
+            metadata={k: v for k, v in item.items() if k not in {"name", "title"}},
+        )
+
+
+@dataclass
+class FinanceResult:
+    """Normalized Google Finance result."""
+
+    symbol: str
+    stock_name: str = ""
+    price: str = ""
+    price_change: str = ""
+    percent_change: str = ""
+    currency: str = ""
+    exchange: str = ""
+    summary: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "FinanceResult":
+        summary = item.get("summary") if isinstance(item.get("summary"), dict) else item
+        symbol = item.get("symbol") or summary.get("symbol") or item.get("ticker") or ""
+        stock_name = item.get("stock_name") or item.get("name") or summary.get("title") or item.get("title") or ""
+        price = item.get("price") or summary.get("price") or ""
+        price_change = item.get("price_change") or summary.get("price_change") or ""
+        percent_change = item.get("price_change_percent") or summary.get("price_change_percent") or ""
+        return cls(
+            symbol=str(symbol),
+            stock_name=str(stock_name),
+            price=str(price),
+            price_change=str(price_change),
+            percent_change=str(percent_change),
+            currency=str(item.get("currency") or summary.get("currency") or ""),
+            exchange=str(item.get("exchange") or summary.get("exchange") or ""),
+            summary=str(item.get("snippet") or summary.get("description") or ""),
+            metadata={k: v for k, v in item.items() if k not in {"symbol", "name"}},
+        )
+
+
+@dataclass
+class TrendResult:
+    """Normalized Google Trends result."""
+
+    query: str
+    interest_over_time: list[dict[str, Any]] = field(default_factory=list)
+    top_queries: list[str] = field(default_factory=list)
+    rising_queries: list[str] = field(default_factory=list)
+    region: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "TrendResult":
+        related = item.get("related_queries") or {}
+        top = [q.get("query", "") for q in related.get("top", []) if isinstance(q, dict)]
+        rising = [q.get("query", "") for q in related.get("rising", []) if isinstance(q, dict)]
+        return cls(
+            query=str(item.get("query", "") or ""),
+            interest_over_time=item.get("interest_over_time", {}).get("timeline_data", []) or [],
+            top_queries=top,
+            rising_queries=rising,
+            region=str(item.get("geo", "") or ""),
+            metadata={k: v for k, v in item.items() if k not in {"query"}},
+        )
+
+
+@dataclass
+class EventResult:
+    """Normalized Google Events result."""
+
+    title: str
+    date: str = ""
+    time: str = ""
+    venue: str = ""
+    address: str = ""
+    description: str = ""
+    ticket_links: list[str] = field(default_factory=list)
+    image: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "EventResult":
+        venue_info = item.get("venue") or {}
+        date_info = item.get("date") or {}
+        tickets = [t.get("link", "") for t in item.get("ticket_info", []) if isinstance(t, dict)]
+        return cls(
+            title=str(item.get("title", "") or ""),
+            date=str(date_info.get("when", "") or date_info.get("start_date", "") or ""),
+            time=str(date_info.get("time", "") or ""),
+            venue=str(venue_info.get("name", "") or item.get("address", [{}])[0] if isinstance(item.get("address"), list) else ""),
+            address=str(", ".join(item.get("address", [])) if isinstance(item.get("address"), list) else item.get("address", "")),
+            description=str(item.get("description", "") or item.get("snippet", "") or ""),
+            ticket_links=tickets,
+            image=item.get("image") or item.get("thumbnail"),
+            metadata={k: v for k, v in item.items() if k not in {"title", "description"}},
+        )
+
