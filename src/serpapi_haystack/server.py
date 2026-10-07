@@ -200,7 +200,11 @@ def execute_tools(toolset: Any, query: str, num_results: int, budget: BudgetLimi
             def _run() -> dict:
                 started = time.monotonic()
                 try:
-                    out = t.component.run(query=query, num_results=num_results)
+                    # Public Haystack API: Tool.invoke() runs the wrapped
+                    # component (ComponentTool exposes it as _component only).
+                    out = t.invoke(query=query, num_results=num_results)
+                    if not isinstance(out, dict):
+                        raise TypeError(f"Unexpected tool result type: {type(out).__name__}")
                     trace.add(
                         ToolCallRecord(
                             tool=t.name,
@@ -263,9 +267,13 @@ def execute_search(req: SearchRequest, request: Request) -> dict[str, Any]:
     loc = (req.location or "").strip()[:120] or None
     tool = TOOL_FACTORIES[req.engine]()
     try:
+        kwargs: dict[str, Any] = {"query": q, "num_results": req.num_results}
         if loc:
-            return tool.component.run(query=q, num_results=req.num_results, location=loc)
-        return tool.component.run(query=q, num_results=req.num_results)
+            kwargs["location"] = loc
+        out = tool.invoke(**kwargs)
+        if not isinstance(out, dict):
+            raise TypeError(f"Unexpected tool result type: {type(out).__name__}")
+        return out
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Search failed: {str(exc)[:200]}")
 
