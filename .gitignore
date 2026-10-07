@@ -10,3 +10,5 @@ build/
 # PRD and raw spec documents
 serpapi_haystack_universal_web_intelligence_prd.md
 *.prd.md
+# Local spec, never track
+ruleset.md

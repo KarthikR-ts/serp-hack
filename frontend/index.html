@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Serp Intelligence — Universal Web Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to results</a>
+<header class="top"><div class="top-inner">
+<div class="brand">Serp Intelligence<small>You ask. Agent chooses how to research it.</small></div>
+</div></header>
+<div class="layout">
+<aside class="side" aria-label="Library">
+<h2>Conversations</h2>
+<div id="convs"></div>
+<h2>Saved research</h2>
+<div id="saved"></div>
+<button class="btn" id="clearSaved" type="button">Clear saved</button>
+<h2>API</h2>
+<p style="font-size:13px;color:var(--color-muted-fg)">Backend: <code id="apiBase">same origin</code></p>
+</aside>
+<main class="main" id="main">
+<section class="hero" id="hero" aria-label="Ask">
+<h1>Evidence first. Answer second.</h1>
+<p>One question in. Agent picks the right search verticals, shows its trace, cites sources. Jobs, shopping, papers, travel, finance, news, local.</p>
+<div class="searchrow">
+<label class="visually-hidden" for="q">Ask anything</label>
+<input id="q" type="text" placeholder="Find software engineering internships…" autocomplete="off" maxlength="500">
+<button class="btn btn-primary" id="go" type="button"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><line x1="14" y1="14" x2="18" y2="18" stroke="currentColor" stroke-width="2"/></svg> Research</button>
+</div>
+<div class="btn-row" aria-label="Shortcuts">
+<button class="chip" data-q="Research the current state of AI coding agents" type="button">Research</button>
+<button class="chip" data-q="Find best OLED monitor under $500 with reviews" type="button">Shopping</button>
+<button class="chip" data-q="Teach me diffusion models from beginner to papers" type="button">Learn</button>
+<button class="chip" data-q="Find software engineering internships" type="button">Jobs</button>
+<button class="chip" data-q="Plan a 4-day trip to Tokyo under budget" type="button">Travel</button>
+</div>
+<fieldset class="modes" aria-label="Mode">
+<legend class="visually-hidden">Mode</legend>
+<label><input type="radio" name="mode" value="auto" checked> Auto</label>
+<label><input type="radio" name="mode" value="research"> Research</label>
+<label><input type="radio" name="mode" value="shopping"> Shopping</label>
+<label><input type="radio" name="mode" value="jobs"> Jobs</label>
+<label><input type="radio" name="mode" value="learning"> Learning</label>
+<label><input type="radio" name="mode" value="travel"> Travel</label>
+<label><input type="checkbox" id="deep"> Deep research</label>
+</fieldset>
+<div class="filters" id="f-research"><label class="visually-hidden" for="ff-date">Date</label><input id="ff-date" data-f="date" placeholder="Date (e.g. past month)"><label class="visually-hidden" for="ff-domain">Domain</label><input id="ff-domain" data-f="domain" placeholder="Domain"><label class="visually-hidden" for="ff-acad">Academic only</label><select id="ff-acad" data-f="academic"><option value="">Academic?</option><option value="yes">Academic only</option></select></div>
+<div class="filters" id="f-shopping"><label class="visually-hidden" for="ff-budget">Max budget</label><input id="ff-budget" data-f="budget" placeholder="Max budget"><label class="visually-hidden" for="ff-brand">Brand</label><input id="ff-brand" data-f="brand" placeholder="Brand"><label class="visually-hidden" for="ff-rating">Min rating</label><input id="ff-rating" data-f="min_rating" placeholder="Min rating"></div>
+<div class="filters" id="f-jobs"><label class="visually-hidden" for="ff-role">Role</label><input id="ff-role" data-f="role" placeholder="Role"><label class="visually-hidden" for="ff-loc">Location</label><input id="ff-loc" data-f="location" placeholder="Location"><label class="visually-hidden" for="ff-remote">Remote</label><select id="ff-remote" data-f="remote"><option value="">Onsite/Remote?</option><option>Remote</option><option>Onsite</option></select></div>
+<div class="filters" id="f-learning"><label class="visually-hidden" for="ff-level">Level</label><select id="ff-level" data-f="level"><option value="">Level</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select><label class="visually-hidden" for="ff-cost">Cost</label><select id="ff-cost" data-f="free"><option value="">Cost</option><option>Free only</option></select></div>
+<div class="filters" id="f-travel"><label class="visually-hidden" for="ff-origin">Origin</label><input id="ff-origin" data-f="origin" placeholder="Origin"><label class="visually-hidden" for="ff-dest">Destination</label><input id="ff-dest" data-f="destination" placeholder="Destination"><label class="visually-hidden" for="ff-dates">Dates</label><input id="ff-dates" data-f="dates" placeholder="Dates"><label class="visually-hidden" for="ff-tbudget">Budget</label><input id="ff-tbudget" data-f="budget" placeholder="Budget"></div>
+<div class="btn-row">
+<button class="btn" id="planBtn" type="button">Show plan first</button>
+<button class="btn" id="saveBtn" type="button">Save result</button>
+<button class="btn" id="compareBtn" type="button">Compare selected</button>
+</div>
+<div class="btn-row" aria-label="Search again">
+<button class="btn" data-again="wider" type="button">Search wider</button>
+<button class="btn" data-again="recent" type="button">Recent only</button>
+<button class="btn" data-again="cheaper" type="button">Cheaper</button>
+<button class="btn" data-again="academic" type="button">Academic</button>
+</div>
+</section>
+<section id="status" aria-live="polite"></section>
+<details class="trace" id="traceWrap"><summary>Research process</summary><div class="trace-body" id="trace"></div></details>
+<section id="learn" class="trace" style="display:none"><div class="trace-body learn" id="learnBody"></div></section>
+<div class="cards" id="cards"></div>
+<div id="cmpWrap"></div>
+<section class="sources" aria-label="Sources"><h2>Sources (<span id="srcCount">0</span>)</h2><ol id="sources"></ol></section>
+</main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script src="vendor/gsap.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
