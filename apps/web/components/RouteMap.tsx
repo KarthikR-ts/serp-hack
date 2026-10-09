@@ -1,117 +1,169 @@
 "use client";
 
+import { useState } from "react";
+import {
+  Bag, Briefcase, CaretDown, ChalkboardTeacher, Compass, BookOpen,
+  Globe, Lightning, Newspaper, TrendUp,
+} from "@phosphor-icons/react";
 import type { Budget, RouteLine } from "../lib/types";
 
-const FAM_VAR: Record<string, string> = {
-  web: "var(--fam-web)",
-  research: "var(--fam-research)",
-  live: "var(--fam-live)",
-  career: "var(--fam-career)",
-  commerce: "var(--fam-commerce)",
-  place: "var(--fam-place)",
+const FAM_COLOR: Record<string, string> = {
+  web: "var(--fam-web)", research: "var(--fam-research)", live: "var(--fam-live)",
+  career: "var(--fam-career)", commerce: "var(--fam-commerce)", place: "var(--fam-place)",
 };
 
-function Terminal({ line, x, y }: { line: RouteLine; x: number; y: number }) {
-  const color = FAM_VAR[line.family] || FAM_VAR.web;
-  if (line.status === "ok")
-    return (
-      <g>
-        <circle cx={x} cy={y} r={9} fill={color} />
-        <text x={x + 16} y={y + 4} fontSize={12} fill="var(--ink-2)" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {line.result_count}
-        </text>
-      </g>
-    );
-  if (line.status === "empty")
-    return (
-      <g>
-        <circle cx={x} cy={y} r={9} fill="none" stroke={color} strokeWidth={2} />
-        <text x={x + 16} y={y + 4} fontSize={12} fill="var(--ink-2)">0</text>
-      </g>
-    );
-  if (line.status === "failed")
-    return (
-      <text x={x} y={y + 5} fontSize={14} fill="var(--error)" aria-label="failed">
-        ✕
-      </text>
-    );
-  return (
-    <text x={x} y={y + 4} fontSize={12} fill="var(--ink-3)">
-      … skipped
-    </text>
-  );
+function LaneIcon({ vertical, family }: { vertical: string; family: string }) {
+  const v = vertical.toLowerCase();
+  const S = 14;
+  if (/shop/.test(v)) return <Bag size={S} />;
+  if (/job/.test(v)) return <Briefcase size={S} />;
+  if (/scholar|patent/.test(v)) return <BookOpen size={S} />;
+  if (/news/.test(v)) return <Newspaper size={S} />;
+  if (/trend|finance/.test(v)) return <TrendUp size={S} />;
+  if (/map|flight|hotel|event|local/.test(v)) return <Compass size={S} />;
+  if (/learn|youtube|video/.test(v)) return <ChalkboardTeacher size={S} />;
+  void family;
+  return <Globe size={S} />;
 }
 
+function stateLabel(l: RouteLine): string {
+  if (l.status === "ok") return `${l.result_count} found`;
+  if (l.status === "failed") return "Did not load";
+  if (l.status === "empty") return "No results";
+  if (l.status === "running") return "Searching";
+  if (l.status === "cached") return `${l.result_count} cached`;
+  if (l.status === "skipped") return "Skipped";
+  return "Waiting";
+}
+
+/** Signature graphic. DOM lanes, never color alone: glyph + label + shape. */
 export function RouteMap({
-  route,
-  budget,
-  onFilter,
-  activeVertical,
+  route, budget, onFilter, activeVertical,
 }: {
-  route: RouteLine[];
-  budget?: Budget;
-  onFilter: (v: string | null) => void;
-  activeVertical: string | null;
+  route: RouteLine[]; budget?: Budget;
+  onFilter: (v: string | null) => void; activeVertical: string | null;
 }) {
-  const H = 44 + route.length * 38;
+  const [open, setOpen] = useState(false);
   const okN = route.filter((l) => l.status === "ok").length;
   const bad = route.filter((l) => l.status === "failed").length;
+  const autoOpen = bad > 0;
+  const showTwin = open || autoOpen;
+
   return (
-    <section aria-label="Route" className="surface p-4 my-4">
-      <div className="flex flex-wrap items-baseline gap-2 mb-2">
-        <h2 className="text-[15px] m-0 font-semibold">Route</h2>
-        <span className="text-[13px] text-[var(--ink-2)]">
-          {okN} of {route.length} sources loaded{bad ? ` · ${bad} didn&apos;t load` : ""}
+    <section aria-label="Route" className="surface overflow-hidden !rounded-[14px]">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pt-3.5">
+        <h2 className="text-[13.5px] font-semibold">Route</h2>
+        <span className="tnum text-[12px] text-[var(--ink-2)]">
+          {okN} of {route.length} sources{bad ? ` · ${bad} did not load` : ""}
         </span>
         {budget && (
-          <span className="text-[13px] text-[var(--ink-2)]" style={{ fontVariantNumeric: "tabular-nums" }}>
+          <span className="tnum text-[12px] text-[var(--ink-3)]">
             {budget.calls_used} of {budget.calls_limit} searches · {budget.seconds_used}s
           </span>
         )}
+        <span className="flex-1" />
+        <button
+          type="button" onClick={() => setOpen((o) => !o)}
+          className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-[var(--line)] px-2.5 text-[12px] font-medium text-[var(--ink-2)]"
+          aria-expanded={showTwin}
+        >
+          Details <CaretDown size={12} style={{ transform: showTwin ? "rotate(180deg)" : "none" }} />
+        </button>
       </div>
-      <svg viewBox={`0 0 640 ${H}`} role="img" aria-hidden="true" className="block w-full h-auto">
-        <circle cx={24} cy={H / 2} r={10} fill="none" stroke="var(--ink)" strokeWidth={2} />
+
+      <ol className="m-0 list-none p-2">
         {route.map((line, i) => {
-          const y = 44 + i * 38;
-          const color = FAM_VAR[line.family] || FAM_VAR.web;
-          const dim = activeVertical && activeVertical !== line.vertical;
+          const color = FAM_COLOR[line.family] || FAM_COLOR.web;
+          const dim = !!activeVertical && activeVertical !== line.vertical;
+          const failed = line.status === "failed";
           return (
-            <g
-              key={line.id}
-              className={`route-line-g${dim ? " dim" : ""}`}
-              onClick={() => onFilter(activeVertical === line.vertical ? null : line.vertical)}
-            >
-              <line
-                x1={40} x2={500} y1={y} y2={y}
-                stroke={color} strokeWidth={2}
-                strokeDasharray={line.status === "failed" ? "2 8" : undefined}
-                className="route-draw" style={{ "--i": i } as React.CSSProperties}
-              />
-              <circle cx={150} cy={y} r={4} fill={color}><title>{line.query || line.name}</title></circle>
-              <circle cx={300} cy={y} r={4} fill={color}><title>{line.query || line.name}</title></circle>
-              <Terminal line={line} x={516} y={y} />
-              <text x={40} y={y - 8} fontSize={13} fill="var(--ink-2)">{line.name}</text>
-            </g>
+            <li key={line.id}>
+              <button
+                type="button"
+                onClick={() => onFilter(activeVertical === line.vertical ? null : line.vertical)}
+                aria-label={`${line.name}: ${stateLabel(line)}. Filter results.`}
+                className="grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-[10px] border border-transparent px-2 py-2 text-left transition hover:bg-[var(--surface-2)]"
+                style={{ opacity: dim ? 0.35 : 1 }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="grid h-7 w-7 place-items-center rounded-[9px] text-white"
+                  style={{ background: color }}
+                >
+                  <LaneIcon vertical={line.vertical} family={line.family} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13.5px] font-semibold leading-tight">{line.name}</span>
+                  <span className="block truncate font-mono text-[11px] text-[var(--ink-3)]">
+                    {line.query || line.vertical}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="mt-1.5 block h-[3px] overflow-hidden rounded-full bg-[var(--line-soft)]"
+                  >
+                    <span
+                      className={`block h-full rounded-full ${line.status === "running" ? "travel-seg" : "route-draw"}`}
+                      style={{
+                        // @ts-expect-error css var
+                        "--i": i,
+                        width: "100%",
+                        background: failed
+                          ? "repeating-linear-gradient(90deg, var(--error) 0 6px, transparent 6px 12px)"
+                          : `linear-gradient(90deg, ${color}, ${color})`,
+                        opacity: line.status === "planned" ? 0.35 : 1,
+                      }}
+                    />
+                  </span>
+                </span>
+                <span className="tnum inline-flex items-center gap-1.5 font-mono text-[11.5px] text-[var(--ink-2)]">
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 rounded-full ${line.status === "running" ? "pulse-dot" : ""}`}
+                    style={{
+                      background:
+                        line.status === "ok" ? "var(--live)"
+                        : failed ? "var(--error)"
+                        : line.status === "empty" ? "var(--control)"
+                        : line.status === "running" ? "var(--fam-commerce)"
+                        : "var(--line)",
+                      borderRadius: failed ? 2 : 999,
+                    }}
+                  />
+                  {stateLabel(line)}
+                  {line.status === "running" && <Lightning size={12} className="pulse-dot" />}
+                </span>
+              </button>
+            </li>
           );
         })}
-        <g className="route-merge">
-          <circle cx={590} cy={H / 2} r={14} fill="var(--ink)" />
-          <text x={590} y={H / 2 + 5} textAnchor="middle" fill="var(--bg)" fontSize={12}>≡</text>
-          <title>Answer</title>
-        </g>
-      </svg>
-      <ol aria-label="Sources used, text version" className="md:hidden list-none m-0 p-0 mt-2">
-        {route.map((line) => (
-          <li key={line.id} className="my-1">
-            <button
-              type="button" onClick={() => onFilter(activeVertical === line.vertical ? null : line.vertical)}
-              className="w-full text-left text-sm p-2 min-h-[44px] rounded-md border border-transparent hover:border-[var(--rule)]"
-            >
-              {line.name}: {line.status === "ok" ? `${line.result_count} results` : line.status === "failed" ? "didn't load" : line.status}
-            </button>
-          </li>
-        ))}
       </ol>
+
+      {budget && (
+        <div className="flex items-center gap-2 px-4 pb-1">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--line-soft)]" aria-hidden="true">
+            <div
+              className="h-full rounded-full bg-[var(--ink)] transition-[width] duration-500"
+              style={{ width: `${Math.min(100, (budget.calls_used / Math.max(1, budget.calls_limit)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {showTwin && (
+        <ol aria-label="Sources used, text version" className="m-0 list-none border-t border-[var(--line-soft)] px-4 py-2">
+          {route.map((l) => (
+            <li key={l.id} className="border-t border-dashed border-[var(--line)] py-1.5 text-[13px] text-[var(--ink-2)] first:border-t-0">
+              <button
+                type="button" onClick={() => onFilter(l.vertical)}
+                className="w-full rounded-lg p-1.5 text-left hover:bg-[var(--surface-2)]"
+              >
+                {l.name}: {l.status === "ok" ? `${l.result_count} results` : stateLabel(l)}
+                {l.latency_ms > 0 && <span className="tnum text-[var(--ink-3)]"> · {(l.latency_ms / 1000).toFixed(1)}s</span>}
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
     </section>
   );
 }

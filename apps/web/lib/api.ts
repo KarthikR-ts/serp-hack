@@ -1,10 +1,11 @@
-import type { AgentResponse, ChatResponse } from "./types";
+// API client. Relative /api preferred (Next rewrite proxies to FastAPI).
+// Falls back to NEXT_PUBLIC_API_URL for separate deploys.
+const BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://127.0.0.1:8000";
+const p = (path: string) => (BASE ? `${BASE}${path}` : path);
 
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const r = await fetch(`${API_URL}${path}`, {
+  const r = await fetch(p(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -17,38 +18,41 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
 }
 
 export const api = {
-  chat: (query: string, opts: { mode?: string; deep?: boolean; filters?: Record<string, unknown>; signal?: AbortSignal } = {}) =>
-    post<ChatResponse>("/api/chat", {
-      query,
-      mode: opts.mode || "auto",
-      deep_research: !!opts.deep,
-      filters: opts.filters || {},
+  chat: (
+    query: string,
+    opts: { mode?: string; deep?: boolean; filters?: Record<string, unknown>; signal?: AbortSignal } = {},
+  ) =>
+    post<import("./types").ChatResponse>("/api/chat", {
+      query, mode: opts.mode || "auto",
+      deep_research: !!opts.deep, filters: opts.filters || {},
     }, opts.signal),
   agent: (query: string, opts: { filters?: Record<string, unknown>; signal?: AbortSignal } = {}) =>
-    post<AgentResponse>("/api/agent", { query, filters: opts.filters || {} }, opts.signal),
+    post<import("./types").AgentResponse>("/api/agent", { query, filters: opts.filters || {} }, opts.signal),
   intents: (query: string, signal?: AbortSignal) =>
-    post<{ analysis: ChatResponse["analysis"]; plan: ChatResponse["plan"]; estimated_calls: number; estimated_seconds: number; requires_confirmation: boolean }>(
-      "/api/intents", { query }, signal
-    ),
+    post<{
+      analysis: import("./types").ChatResponse["analysis"];
+      plan: import("./types").ChatResponse["plan"];
+      estimated_calls: number; estimated_seconds: number; requires_confirmation: boolean;
+    }>("/api/intents", { query }, signal),
   usage: async () => {
-    const r = await fetch(`${API_URL}/api/usage`);
+    const r = await fetch(p("/api/usage"));
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    return r.json() as Promise<{
+      queries: number; serpapi_calls: number; calls_per_query: number;
+      failed_calls: number; calls_by_tool: Record<string, number>; uptime_seconds: number;
+    }>;
   },
 };
 
-export interface StreamProgress {
-  stage: string;
-  detail?: string;
-}
+export interface StreamProgress { stage: string; detail?: string; }
 
-/** POST SSE stream; calls onProgress per event. Resolves false when unusable. */
+/** POST SSE stream. Returns false when stream unusable (caller falls back). */
 export async function streamChat(
   query: string,
   opts: { mode: string; deep: boolean; filters: Record<string, unknown>; signal?: AbortSignal },
-  onProgress: (p: StreamProgress) => void
+  onProgress: (p: StreamProgress) => void,
 ): Promise<boolean> {
-  const r = await fetch(`${API_URL}/api/chat/stream`, {
+  const r = await fetch(p("/api/chat/stream"), {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ query, mode: opts.mode, deep_research: opts.deep, filters: opts.filters }),
@@ -64,18 +68,29 @@ export async function streamChat(
     buf += dec.decode(value, { stream: true });
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
-    for (const p of parts) {
-      const m = p.match(/event: (\w+)\ndata: ([\s\S]*)/);
+    for (const part of parts) {
+      const m = part.match(/event: (\w+)\ndata: ([\s\S]*)/);
       if (!m) continue;
       events++;
       try {
         const j = JSON.parse(m[2]);
         if (m[1] === "intent_detected") onProgress({ stage: "intent", detail: (j.intent || []).join(", ") });
-        else if (m[1] === "plan_created") onProgress({ stage: "plan", detail: String(j.length) });
+        else if (m[1] === "plan_created") onProgress({ stage: "plan", detail: String(j.length ?? "?") });
         else if (m[1] === "tool_started") onProgress({ stage: "tool", detail: j.tool });
         else if (m[1] === "synthesis_started") onProgress({ stage: "synthesis" });
-      } catch { /* keep going */ }
+      } catch { /* keep streaming */ }
     }
   }
   return events > 0;
+}
+
+export function safeHttp(url: unknown): string | null {
+  try {
+    const u = new URL(String(url || ""), "http://localhost");
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch { return null; }
+}
+
+export function safeImg(url: unknown): string | null {
+  return typeof url === "string" && url.startsWith("https://") ? url : null;
 }

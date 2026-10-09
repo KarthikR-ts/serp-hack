@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "motion": "^14.0.0",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest"

@@ -1,58 +1,63 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight, Bag, Briefcase, Compass, BookOpen, GraduationCap, Newspaper,
+} from "@phosphor-icons/react";
 import { api, streamChat } from "../lib/api";
-import type { AgentResponse, ApiResult, ApiSource, ChatResponse } from "../lib/types";
+import type { AgentPresentation, AgentResponse, ApiResult, ChatResponse, RunData } from "../lib/types";
+import { fmtInt } from "../lib/format";
+import { TopBar } from "../components/TopBar";
+import { Sidebar } from "../components/Sidebar";
 import { Composer } from "../components/Composer";
 import { RouteMap } from "../components/RouteMap";
-import { CompareTray } from "../components/CompareTray";
-import { ClarifyCard, PlanCard } from "../components/PlanClarify";
-import { Margin } from "../components/Margin";
-import { JobRow, PageRow, PaperEntry, ProductTile, VideoCard, detectKind } from "../components/ResultCards";
+import { EvidenceMargin } from "../components/EvidenceMargin";
+import { CommandPalette } from "../components/CommandPalette";
+import {
+  ClarifyCard, CompareTray, ConfidenceLine, EmptyResults, ErrorPanel, PlanCard, SkeletonRun,
+} from "../components/States";
+import {
+  JobRow, NewsItem, PageRow, PaperEntry, ProductTile, VideoCard, detectKind,
+} from "../components/ResultCards";
 
 const GOALS = [
-  { label: "Compare products", template: "Compare products: ___ vs ___" },
-  { label: "Find roles or internships", template: "Find roles or internships in ___" },
-  { label: "Research a topic", template: "Research ___" },
-  { label: "Build a learning plan", template: "Build a learning plan for ___" },
-  { label: "Plan a trip", template: "Plan a trip to ___" },
-  { label: "Check what's changed", template: "What changed in ___ recently?" },
+  { label: "Compare products", sub: "Price, specs, tradeoffs", template: "Compare products: ___ vs ___", icon: Bag, span: true },
+  { label: "Find roles", sub: "Internships and jobs", template: "Find software engineering internships in Bengaluru", icon: Briefcase, span: false },
+  { label: "Research a topic", sub: "Papers, news, context", template: "Research ", icon: BookOpen, span: false },
+  { label: "Learning plan", sub: "Ordered, with sources", template: "Build a learning plan for ", icon: GraduationCap, span: false },
+  { label: "Plan a trip", sub: "Stays, flights, places", template: "Plan a 4 day trip to ", icon: Compass, span: false },
+  { label: "What changed", sub: "Fresh news and trends", template: "What changed in  recently?", icon: Newspaper, span: false },
 ];
 
 const TRY = [
   "Find three good laptops under ₹80,000 for machine learning",
-  "Find software engineering internships in Bengaluru",
-  "Teach me CRISPR gene editing from beginner to papers",
+  "Software internships in Bengaluru this summer",
+  "Teach me CRISPR from basics to papers",
 ];
 
 const SUFFIX: Record<string, string> = {
-  cheaper: " cheaper options",
-  recent_reviews: " with recent reviews",
-  brands: " other brands",
-  wider: " wider search",
-  remote: " including remote",
-  recent: " posted this week",
-  pay: " higher pay",
-  cities: " other cities",
-  academic: " academic sources",
-  counter: " counter-arguments",
-  beginner: " beginner friendly",
-  projects: " with projects",
-  papers: " with papers",
+  cheaper: " cheaper options", recent_reviews: " with recent reviews", brands: " other brands",
+  wider: " wider search", remote: " including remote", recent: " posted this week",
+  pay: " higher pay", cities: " other cities", academic: " academic sources",
+  counter: " counter-arguments", beginner: " beginner friendly", projects: " with projects", papers: " with papers",
 };
 
-type RunData = { kind: "chat"; data: ChatResponse } | { kind: "agent"; data: AgentResponse };
+const FILTER_LABELS: Record<string, string> = {
+  budget: "Budget", currency: "Currency", min_rating: "Min rating", rating: "Min rating",
+  location: "Location", remote: "Remote", salary_min: "Min pay", min_salary: "Min pay",
+};
 
 export default function Workspace() {
   const [query, setQuery] = useState("");
-  const [phase, setPhase] = useState<"idle" | "planning" | "running" | "done">("idle");
-  const [progress, setProgress] = useState("");
+  const [mode, setMode] = useState("auto");
+  const [deep, setDeep] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "planning" | "running" | "done" | "error">("idle");
+  const [progress, setProgress] = useState("Ready");
   const [run, setRun] = useState<RunData | null>(null);
-  const [planPreview, setPlanPreview] = useState<{ plan: { id: number; action: string; tool: string; query: string }[]; estimated_calls: number; estimated_seconds: number } | null>(null);
+  const [planPreview, setPlanPreview] = useState<{ plan: ChatResponse["plan"]; estimated_calls: number; estimated_seconds: number } | null>(null);
   const [filters, setFilters] = useState<Record<string, unknown>>({});
   const [visible, setVisible] = useState(10);
-  const [selected, setSelected] = useState<Map<number, ApiResult>>(new Map());
+  const [selected, setSelected] = useState<Map<string, ApiResult>>(new Map());
   const [filterVertical, setFilterVertical] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; key: number } | null>(null);
   const [theme, setTheme] = useState("system");
@@ -61,6 +66,10 @@ export default function Workspace() {
   const [online, setOnline] = useState(true);
   const [flashEid, setFlashEid] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [railOpen, setRailOpen] = useState(false);
+  const [inspOpen, setInspOpen] = useState(false);
+  const [palOpen, setPalOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const aborter = useRef<AbortController | null>(null);
   const pending = useRef<{ q: string; mode: string; deep: boolean } | null>(null);
 
@@ -74,15 +83,22 @@ export default function Workspace() {
   useEffect(() => {
     try {
       setHist(JSON.parse(sessionStorage.getItem("serp_hist") || "[]"));
-    } catch { /* empty */ }
+      const th = localStorage.getItem("serp_theme");
+      if (th) { setTheme(th); document.documentElement.dataset.theme = th; }
+    } catch { /* private mode */ }
     const on = () => setOnline(navigator.onLine);
     window.addEventListener("online", on);
     window.addEventListener("offline", on);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); };
+    const keys = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalOpen((o) => !o); }
+      if (e.key === "Escape") setPalOpen(false);
+    };
+    window.addEventListener("keydown", keys);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); window.removeEventListener("keydown", keys); };
   }, []);
 
   const cycleTheme = () => {
-    const next = theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+    const next = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
     setTheme(next);
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem("serp_theme", next); } catch { /* ignore */ }
@@ -100,94 +116,96 @@ export default function Workspace() {
       saved.unshift({ ...item, at: new Date().toISOString() });
       localStorage.setItem("serp_saved", JSON.stringify(saved.slice(0, 50)));
       setSavedTick((t) => t + 1);
-      say("Saved");
-    } catch { say("Couldn't save on this device"); }
+      say("Saved to this device");
+    } catch { say("Could not save on this device"); }
   };
 
-  const startRun = async (q: string, kind: "chat" | "agent", mode = "auto", deep = false, flt: Record<string, unknown> = {}) => {
-    const query = q.trim().slice(0, 500);
-    if (!query) { say("Type a query first"); return; }
+  const startRun = async (q: string, kind: "chat" | "agent", m = mode, d = deep, flt: Record<string, unknown> = {}) => {
+    const text = q.trim().slice(0, 2000);
+    if (!text) { say("Type a question first"); return; }
     aborter.current?.abort();
     aborter.current = new AbortController();
     setRun(null); setPlanPreview(null); setVisible(10);
     setSelected(new Map()); setFilterVertical(null); setFilters(flt);
-    setDismissed(new Set());
-    setPhase("running"); setProgress("Understanding your question…");
-    pushHist(query, kind);
+    setDismissed(new Set()); setErr(null);
+    setPhase("running"); setProgress("Understanding your question");
+    pushHist(text, kind);
+    document.getElementById("answer")?.scrollIntoView({ block: "start", behavior: "smooth" });
     try {
       if (kind === "agent") {
-        const data = await api.agent(query, { filters: flt, signal: aborter.current.signal });
+        const data = await api.agent(text, { filters: flt, signal: aborter.current.signal });
         setRun({ kind, data });
       } else {
         try {
-          const preview = await api.intents(query, aborter.current.signal);
-          if ((preview.requires_confirmation || deep) && sessionStorage.getItem("serp_skip_plan") !== "1") {
+          const preview = await api.intents(text, aborter.current.signal);
+          if ((preview.requires_confirmation || d) && sessionStorage.getItem("serp_skip_plan") !== "1") {
             setPlanPreview(preview);
             setPhase("planning");
-            pending.current = { q: query, mode, deep };
+            setProgress("Plan ready for review");
+            pending.current = { q: text, mode: m, deep: d };
             return;
           }
         } catch (e) {
           if ((e as Error).name === "AbortError") return;
         }
-        await doChat(query, mode, deep, flt);
+        await doChat(text, m, d, flt);
       }
-      setPhase("done");
+      setPhase("done"); setProgress("Done");
     } catch (e) {
-      const err = e as Error;
-      if (err.name === "AbortError") { setProgress("Stopped by you."); return; }
-      setPhase("idle");
-      if (err.message === "LIMIT") say("You've reached the limit for now. Try again in a minute.");
-      else if (err.message === "NOKEY") say("LLM key missing. Set OPENROUTER_API_KEY in .env and restart.");
-      else say("Request failed. Backend running?");
+      const error = e as Error;
+      if (error.name === "AbortError") { setProgress("Stopped by you"); setPhase("idle"); return; }
+      setPhase("error");
+      if (error.message === "LIMIT") setErr("Rate limited. Try again in a minute.");
+      else if (error.message === "NOKEY") setErr("Agent key missing. Set OPENROUTER_API_KEY in .env and restart.");
+      else setErr("Request failed. Check the backend is running.");
     }
   };
 
-  const doChat = async (query: string, mode: string, deep: boolean, flt: Record<string, unknown>) => {
+  const doChat = async (text: string, m: string, d: boolean, flt: Record<string, unknown>) => {
     const signal = aborter.current?.signal;
-    setPhase("running");
-    setProgress("Searching relevant sources…");
-    await streamChat(
-      query, { mode, deep, filters: flt, signal },
-      (p) => {
-        if (p.stage === "intent") setProgress(`Understood as ${p.detail}`);
-        else if (p.stage === "plan") setProgress(`Plan: ${p.detail} steps.`);
-        else if (p.stage === "tool") setProgress(`Searching: ${p.detail}…`);
-        else if (p.stage === "synthesis") setProgress("Writing the answer…");
-      }
-    ).catch((e) => { if ((e as Error).name === "AbortError") throw e; });
-    const data = await api.chat(query, { mode, deep, filters: flt, signal });
+    setProgress("Searching relevant sources");
+    await streamChat(text, { mode: m, deep: d, filters: flt, signal }, (p) => {
+      if (p.stage === "intent") setProgress(`Understood as ${p.detail}`);
+      else if (p.stage === "plan") setProgress(`Plan: ${p.detail} steps`);
+      else if (p.stage === "tool") setProgress(`Searching ${p.detail}`);
+      else if (p.stage === "synthesis") setProgress("Writing the answer");
+    }).catch((e) => { if ((e as Error).name === "AbortError") throw e; });
+    const data = await api.chat(text, { mode: m, deep: d, filters: flt, signal });
     setRun({ kind: "chat", data });
   };
 
-  const onSelect = (r: ApiResult, i: number, on: boolean) => {
+  const onSelect = (r: ApiResult, key: string, on: boolean) => {
     setSelected((prev) => {
       const next = new Map(prev);
       if (on) {
         if (next.size >= 4) { say("Compare holds 4 at most"); return prev; }
-        next.set(i, r);
-      } else next.delete(i);
+        next.set(key, r);
+      } else next.delete(key);
       return next;
     });
   };
 
-  const resultKey = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
+  const rkey = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
   const dismiss = (r: ApiResult) => {
-    setDismissed((prev) => new Set(prev).add(resultKey(r)));
+    setDismissed((prev) => new Set(prev).add(rkey(r)));
     say("Removed from this view");
   };
+
   const flash = (eid: string | null) => {
     setFlashEid(eid);
     if (!eid) return;
-    const node = document.querySelector(`[data-eids~="${eid}"]`);
-    node?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-eids~="${CSS.escape(eid)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   };
 
-  const data = run?.data as ChatResponse & AgentResponse | undefined;
-  const sources: ApiSource[] = data?.sources || [];
+  const data = run?.data as (ChatResponse & AgentResponse) | undefined;
+  const sources = data?.sources || [];
   const route = data?.route || [];
   const constraints = (data as ChatResponse)?.constraints || (data as AgentResponse)?.constraints || {};
-  const refinementClick = (id: string) => {
+  const busy = phase === "running" || phase === "planning";
+
+  const refine = (id: string) => {
     const q = data?.query ?? query;
     if (id === "__chat__") { startRun(q, "chat", "auto", false, filters); return; }
     if (id === "followup") { document.getElementById("q")?.focus(); return; }
@@ -195,372 +213,478 @@ export default function Workspace() {
     else startRun(q + (SUFFIX[id] || ""), run?.kind || "chat", "auto", false, filters);
   };
 
+  const paletteCmds = useMemo(() => [
+    { id: "new", label: "New research", hint: "N", run: () => { setQuery(""); setRun(null); setPhase("idle"); } },
+    { id: "theme", label: "Toggle theme", hint: "T", run: cycleTheme },
+    { id: "deep", label: "Toggle deep research", hint: "D", run: () => setDeep((d) => !d) },
+    { id: "mode-auto", label: "Mode: Auto", hint: "1", run: () => setMode("auto") },
+    { id: "mode-shop", label: "Mode: Shopping", hint: "2", run: () => setMode("shopping") },
+    { id: "mode-jobs", label: "Mode: Jobs", hint: "3", run: () => setMode("jobs") },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
+
+  const hasRun = !!data || busy || phase === "error";
+
   return (
     <>
-      <a href="#answer" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:bg-white focus:p-2 focus:z-[60]">Skip to answer</a>
-      <header className="sticky top-0 z-20 bg-[var(--surface)] border-b border-[var(--rule)]">
-        <div className="max-w-[1280px] mx-auto px-4 py-2.5 flex gap-3 items-center">
-          <div className="font-bold text-[18px] tracking-tight">Serp Intelligence<small className="block font-normal text-xs text-[var(--ink-3)]">You ask. The agent chooses how to research it.</small></div>
-          <div className="ml-auto flex gap-2 items-center">
-            <a href="#sources" className="btn !min-h-[44px]">Sources ({sources.length})</a>
-            <button type="button" className="btn" onClick={cycleTheme}>Theme: {theme}</button>
-          </div>
+      <TopBar
+        status={{ busy, error: phase === "error", text: busy ? progress : phase === "error" ? "Needs attention" : phase === "done" ? `Done · ${data?.results_count ?? (data as ChatResponse)?.results_count ?? ""} results`.trim() : "Ready" }}
+        sourceCount={sources.length}
+        onPalette={() => setPalOpen(true)}
+        onToggleRail={() => setRailOpen((o) => !o)}
+        onToggleInspector={() => setInspOpen((o) => !o)}
+        theme={theme} onTheme={cycleTheme}
+      />
+
+      <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-6 px-3 pt-4 sm:px-5 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,760px)_minmax(0,1fr)]">
+        <div className={`${railOpen ? "block" : "hidden"} lg:block`}>
+          <Sidebar
+            open
+            hist={hist}
+            onPick={(q, k) => { setQuery(q); startRun(q, (k as "chat" | "agent") || "chat"); setRailOpen(false); }}
+            onNew={() => { setQuery(""); setRun(null); setPhase("idle"); setProgress("Ready"); }}
+            savedTick={savedTick}
+            onOpenSaved={(s) => {
+              if (s.query) { setQuery(s.query); startRun(s.query, "chat"); }
+              else if (s.url) window.open(s.url, "_blank", "noopener");
+            }}
+          />
         </div>
-      </header>
 
-      <div className="max-w-[1280px] mx-auto px-4 py-4 grid gap-8 lg:grid-cols-[248px_minmax(0,760px)_minmax(0,1fr)] grid-cols-1">
-        <nav aria-label="Library" className="hidden lg:block">
-          <div className="sticky top-[76px] space-y-4">
-            <div>
-              <h2 className="text-[13px] text-[var(--ink-2)] font-semibold my-2">Research</h2>
-              <button type="button" className="btn btn-primary w-full" onClick={() => { setQuery(""); setRun(null); }}>New research</button>
-            </div>
-            <div>
-              <h2 className="text-[13px] text-[var(--ink-2)] font-semibold my-2">Conversations</h2>
-              {!hist.length && <p className="text-[13px] text-[var(--ink-2)]">Nothing yet. Ask above.</p>}
-              {hist.slice(0, 8).map((h, i) => (
-                <button key={i} type="button" className="chip block w-full text-left mb-1.5 truncate" onClick={() => startRun(h.q, (h.kind as "chat" | "agent") || "chat")}>
-                  {h.q.slice(0, 60)}
-                </button>
-              ))}
-            </div>
-            <div>
-              <h2 className="text-[13px] text-[var(--ink-2)] font-semibold my-2">Saved research</h2>
-              <SavedList tick={savedTick} onOpen={(s) => { if (s.query) startRun(s.query, "chat"); else if (s.url) window.open(s.url, "_blank", "noopener"); }} />
-              <p className="text-[13px] text-[var(--ink-3)]">Saved on this device only.</p>
-              <div className="flex gap-2 mt-1">
-                <Link href="/saved" className="btn !min-h-[44px]">Open saved</Link>
-                <Link href="/usage" className="btn !min-h-[44px]">Usage</Link>
-              </div>
-            </div>
-          </div>
-        </nav>
+        <main className="min-w-0 pb-24" id="main">
+          {!hasRun && (
+            <section aria-label="Ask" className="pb-2 pt-4 sm:pt-8">
+              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-2)]">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--live)]" />
+                Universal web intelligence
+              </p>
+              <h1 className="m-0 max-w-[16ch] text-balance text-[clamp(30px,4.6vw,52px)] font-bold leading-[1.04] tracking-[-0.03em]">
+                What do you want to figure out?
+              </h1>
+              <p className="mb-5 mt-3 max-w-[56ch] text-[15.5px] leading-relaxed text-[var(--ink-2)]">
+                Ask in plain words. Agent picks sources and shows each step.
+              </p>
 
-        <main className="min-w-0" id="main">
-          <section aria-label="Ask" className="py-6">
-            <h1 className="m-0 mb-3 font-bold tracking-tight" style={{ fontSize: "clamp(26px, 4vw, 39px)", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
-              What do you want to find out?
-            </h1>
-            <p className="text-[var(--ink-2)] mt-0 mb-4 max-w-[60ch]">Ask in your own words. The assistant chooses where to look.</p>
-            <Composer
-              value={query} onChange={setQuery}
-              onResearch={(o) => startRun(query, "chat", o.mode, o.deep, filters)}
-              onAgent={() => startRun(query, "agent", "auto", false, filters)}
-              onStop={() => aborter.current?.abort()}
-              running={phase === "running" || phase === "planning"}
-            />
-            <FilterChips constraints={constraints} onRemove={(k) => {
-              const next = { ...filters }; delete next[k];
-              startRun((data?.query ?? query), run?.kind || "chat", "auto", false, next);
-            }} />
-            <div className="flex flex-wrap gap-2 mt-3" aria-label="Start from a goal">
-              {GOALS.map((g) => (
-                <button key={g.label} type="button" className="chip" onClick={() => {
-                  setQuery(g.template);
-                  document.getElementById("q")?.focus();
-                }}>{g.label}</button>
-              ))}
-            </div>
-            {!hist.length && (
-              <div className="mt-3 text-[13px] text-[var(--ink-2)]">
-                <span>Try: </span>
-                {TRY.map((t) => (
-                  <button key={t} type="button" className="chip mr-1.5 mb-1.5" onClick={() => startRun(t, "agent")}>{t}</button>
+              <Composer
+                value={query} onChange={setQuery}
+                mode={mode} onMode={setMode} deep={deep} onDeep={setDeep}
+                running={busy}
+                onResearch={(o) => startRun(query, "chat", o.mode, o.deep, {})}
+                onAgent={() => startRun(query, "agent")}
+                onStop={() => aborter.current?.abort()}
+              />
+
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Start from a goal">
+                {GOALS.map((g) => (
+                  <button
+                    key={g.label} type="button"
+                    onClick={() => { setQuery(g.template); document.getElementById("q")?.focus(); }}
+                    className={`spot flex items-center gap-3 rounded-[14px] border border-[var(--line)] bg-[var(--surface)] p-3.5 text-left transition hover:border-[var(--control)] active:scale-[0.98] ${g.span ? "sm:col-span-2 sm:p-4" : ""}`}
+                  >
+                    <span aria-hidden="true" className="grid h-9 w-9 flex-none place-items-center rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink-2)]">
+                      <g.icon size={18} weight="regular" />
+                    </span>
+                    <span className="min-w-0">
+                      <strong className="block truncate text-[14px] font-semibold tracking-tight">{g.label}</strong>
+                      <span className="block truncate text-[12.5px] text-[var(--ink-3)]">{g.sub}</span>
+                    </span>
+                    <ArrowRight size={15} aria-hidden="true" className="ml-auto flex-none text-[var(--ink-3)]" />
+                  </button>
                 ))}
               </div>
-            )}
-          </section>
 
-          {!online && <div className="surface p-3 my-3">You&apos;re offline. Your question will send when you reconnect.</div>}
-
-          {phase === "planning" && planPreview && (
-            <PlanCard
-              steps={planPreview.plan} estimatedCalls={planPreview.estimated_calls} estimatedSeconds={planPreview.estimated_seconds}
-              onStart={(skip) => { if (skip) { try { sessionStorage.setItem("serp_skip_plan", "1"); } catch { /* ignore */ } } const p = pending.current; pending.current = null; setPlanPreview(null); if (p) doChat(p.q, p.mode, p.deep, filters); }}
-              onCancel={() => { pending.current = null; setPlanPreview(null); setPhase("idle"); }}
-            />
+              <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Suggestions">
+                <span className="text-[12.5px] text-[var(--ink-3)]">{hist.length ? "Recent:" : "Try:"}</span>
+                {(hist.length ? hist.slice(0, 3).map((h) => h.q) : TRY).map((t) => (
+                  <button key={t} type="button" className="chip !min-h-[36px]" onClick={() => startRun(t, "agent")}>
+                    {t.slice(0, 52)}
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
 
-          {(phase === "running" || phase === "planning") && !data && (
-            <div aria-busy="true" className="my-4">
-              <p>{progress}</p>
-              <span className="skel" style={{ width: "70%" }} />
-              <span className="skel" style={{ width: "90%" }} />
-              <span className="skel" style={{ width: "55%" }} />
+          {hasRun && (
+            <div className="pt-2">
+              <div className="bezel !rounded-full">
+                <div className="bezel-core flex items-center gap-2 !rounded-full py-1.5 pl-4 pr-1.5">
+                  <label htmlFor="q2" className="sr-only">Ask a follow-up</label>
+                  <input
+                    id="q2" value={query} onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") startRun(query, run?.kind || "chat"); }}
+                    placeholder="Ask a follow-up"
+                    className="w-full bg-transparent text-[14.5px] outline-none placeholder:text-[var(--ink-3)]"
+                  />
+                  <button
+                    type="button" aria-label="Send follow-up"
+                    onClick={() => startRun(query, run?.kind || "chat")}
+                    className="grid h-9 w-9 flex-none place-items-center rounded-full bg-[var(--accent)] text-[var(--accent-ink)] transition active:scale-95"
+                  >
+                    <ArrowRight size={16} weight="bold" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
-          {data && <RunView data={data} kind={run!.kind} filterVertical={filterVertical} onFilter={setFilterVertical} flashEid={flashEid} onSelect={onSelect} onSave={saveItem} onRefine={refinementClick} onRetry={() => startRun(data.query, run!.kind, "auto", false, filters)} dismissed={dismissed} onDismiss={dismiss} />}
+          {!online && (
+            <div className="surface mt-3 p-3 text-[14px]">You are offline. Your question sends when you reconnect.</div>
+          )}
+
+          <FilterChips
+            constraints={constraints}
+            onRemove={(k) => {
+              const next = { ...filters }; delete next[k];
+              startRun(data?.query ?? query, run?.kind || "chat", "auto", false, next);
+            }}
+          />
+
+          {phase === "planning" && planPreview && (
+            <div className="mt-4">
+              <PlanCard
+                steps={planPreview.plan} estimatedCalls={planPreview.estimated_calls} estimatedSeconds={planPreview.estimated_seconds}
+                onStart={(skip) => {
+                  if (skip) { try { sessionStorage.setItem("serp_skip_plan", "1"); } catch { /* ignore */ } }
+                  const p = pending.current; pending.current = null; setPlanPreview(null);
+                  if (p) doChat(p.q, p.mode, p.deep, filters).then(() => setPhase("done")).catch(() => setPhase("error"));
+                }}
+                onCancel={() => { pending.current = null; setPlanPreview(null); setPhase("idle"); setProgress("Ready"); }}
+              />
+            </div>
+          )}
+
+          {phase === "running" && !data && (
+            <div className="mt-4 space-y-3" aria-live="polite">
+              <p className="text-[14px] text-[var(--ink-2)]">{progress}…</p>
+              <SkeletonRun />
+            </div>
+          )}
+
+          {phase === "error" && err && (
+            <div className="mt-4"><ErrorPanel message={err} onRetry={() => startRun(data?.query ?? query, run?.kind || "chat")} /></div>
+          )}
+
+          {data && (
+            <div id="answer" className="mt-4 space-y-4">
+              <RunHeader query={data.query} kind={run!.kind} mode={(data as ChatResponse).mode} />
+              {route.length > 0 && (
+                <RouteMap route={route} budget={data.budget} onFilter={(v) => setFilterVertical((cur) => (cur === v ? null : v))} activeVertical={filterVertical} />
+              )}
+              <AnswerBlock data={data} onRetry={() => startRun(data.query, run!.kind)} />
+              {(run!.kind === "agent" && (data as AgentResponse).status === "clarify") ? (
+                <ClarifyCard
+                  question={(data as AgentResponse).clarifying_question || "Could you add detail?"}
+                  onSkip={() => startRun(data.query, "chat", "auto", false, filters)}
+                />
+              ) : (data as AgentResponse).presentation ? (
+                <PresentationView
+                  pres={(data as AgentResponse).presentation!}
+                  filterVertical={filterVertical} flashEid={flashEid}
+                  onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
+                />
+              ) : (
+                <ResultsList
+                  results={(data as ChatResponse).results || []}
+                  visible={visible} setVisible={setVisible}
+                  filterVertical={filterVertical} flashEid={flashEid}
+                  onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
+                  query={data.query}
+                />
+              )}
+              <RefineRow refinements={data.refinements || []} onRefine={refine} />
+              <p className="tnum font-mono text-[11.5px] text-[var(--ink-3)]" aria-live="polite">{progress}</p>
+            </div>
+          )}
 
           <CompareTray selected={selected} onClear={() => setSelected(new Map())} />
         </main>
 
-        <div id="sources">
-          <Margin sources={sources} onFlash={flash} />
+        <div className={`${inspOpen ? "block" : "hidden"} xl:block`}>
+          <EvidenceMargin
+            sources={sources}
+            onFlash={flash}
+            funnel={(data as ChatResponse)?.funnel || (data as AgentResponse)?.funnel}
+            budget={data?.budget}
+            confidence={data?.confidence}
+            planSteps={(data as ChatResponse)?.analysis?.steps || []}
+          />
         </div>
       </div>
 
-      <footer className="max-w-[1280px] mx-auto px-4 pb-8 text-[13px] text-[var(--ink-3)]">
-        <p>This assistant reads and compares. It doesn&apos;t buy, apply or book for you. Results are live web data: check important claims at the source. Anonymous use: conversations stay in this browser unless you save them.</p>
+      <footer className="mx-auto w-full max-w-[1400px] px-5 pb-8 text-[12.5px] text-[var(--ink-3)]">
+        <p className="m-0">Live web data. Check important claims at the source. Anonymous use stays in this browser unless saved.</p>
       </footer>
 
-      <div aria-live="polite" role="status" className="sr-only">{phase === "done" ? "Answer ready." : progress}</div>
-      {toast && <div role="status" className="toast-show fixed bottom-4 left-1/2 -translate-x-1/2 bg-[var(--ink)] text-[var(--bg)] px-4 py-2.5 rounded-full text-sm z-[60]">{toast.msg}</div>}
+      <div aria-live="polite" role="status" className="sr-only">
+        {phase === "done" ? "Answer ready." : progress}
+      </div>
+      {toast && (
+        <div role="status" className="fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-[var(--ink)] px-4 py-2.5 text-sm text-[var(--bg)]">
+          {toast.msg}
+        </div>
+      )}
+
+      <CommandPalette
+        open={palOpen} onClose={() => setPalOpen(false)}
+        commands={paletteCmds}
+        onAsk={(q) => { setQuery(q); startRun(q, "chat"); }}
+      />
     </>
   );
 }
-
-function SavedList({ tick, onOpen }: { tick: number; onOpen: (s: { title?: string; query?: string; url?: string }) => void }) {
-  const [items, setItems] = useState<{ title?: string; query?: string; url?: string }[]>([]);
-  useEffect(() => {
-    try { setItems(JSON.parse(localStorage.getItem("serp_saved") || "[]").slice(0, 20)); }
-    catch { setItems([]); }
-  }, [tick]);
-  if (!items.length) return <p className="text-[13px] text-[var(--ink-2)]">Nothing saved yet.</p>;
-  return (
-    <div>
-      {items.map((s, i) => (
-        <button key={i} type="button" className="chip block w-full text-left mb-1.5 truncate" onClick={() => onOpen(s)}>
-          {(s.title || s.query || "saved").slice(0, 60)}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const FILTER_LABELS: Record<string, string> = {
-  budget: "Budget", currency: "Currency", min_rating: "Min rating", rating: "Min rating",
-  location: "Location", remote: "Remote", salary_min: "Min pay", min_salary: "Min pay",
-};
 
 function FilterChips({ constraints, onRemove }: { constraints: Record<string, unknown>; onRemove: (k: string) => void }) {
   const keys = Object.keys(constraints || {}).filter((k) => FILTER_LABELS[k] && String(constraints[k]) !== "");
   if (!keys.length) return null;
   return (
-    <div className="flex flex-wrap gap-1.5 mt-2 items-center" aria-label="Understood filters">
+    <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="Understood filters">
       <span className="text-[13px] text-[var(--ink-2)]">Understood:</span>
       {keys.map((k) => (
-        <span key={k} className="inline-flex items-center gap-1.5 bg-[var(--bg)] border border-[var(--rule)] rounded-full px-2.5 py-1.5 text-[13px]">
-          {FILTER_LABELS[k]}: {String(constraints[k])}
-          <button type="button" aria-label={`Remove filter ${FILTER_LABELS[k]}`} onClick={() => onRemove(k)} className="min-w-[32px] min-h-[32px] text-[var(--ink-2)]">✕</button>
+        <span key={k} className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--surface)] py-1 pl-3 pr-1 text-[12.5px]">
+          {FILTER_LABELS[k]}: {String(constraints[k]).slice(0, 32)}
+          <button
+            type="button" aria-label={`Remove filter ${FILTER_LABELS[k]}`} onClick={() => onRemove(k)}
+            className="grid h-6 w-6 place-items-center rounded-full text-[var(--ink-3)] hover:text-[var(--error)]"
+          >
+            ✕
+          </button>
         </span>
       ))}
     </div>
   );
 }
 
-function RunView({ data, kind, filterVertical, onFilter, flashEid, onSelect, onSave, onRefine, onRetry, dismissed, onDismiss }: {
-  data: ChatResponse & AgentResponse;
-  kind: "chat" | "agent";
-  filterVertical: string | null;
-  onFilter: (v: string | null) => void;
-  flashEid: string | null;
-  onSelect: (r: ApiResult, i: number, on: boolean) => void;
-  onSave: (r: Record<string, unknown>) => void;
-  onRefine: (id: string) => void;
-  onRetry: () => void;
-  dismissed: Set<string>;
-  onDismiss: (r: ApiResult) => void;
-}) {
-  const pres = (data as AgentResponse).presentation;
-  const route = data.route || [];
-  const [showAll, setShowAll] = useState(false);
-  useEffect(() => setShowAll(false), [data]);
-
-  const summary = data.summary || "";
-  const conf = data.confidence as Confidence | string | undefined;
-  const intents = ((data as ChatResponse).analysis?.intent || (data as AgentResponse).legacy_intents || []).join(" ");
-  const leadResults = /SHOPPING|JOB_SEARCH|LOCAL_DISCOVERY|EVENTS|TRAVEL|shopping|jobs|travel/.test(intents + " " + (((data as AgentResponse).classification?.use_case) || ""));
-
+function RunHeader({ query, kind, mode }: { query: string; kind: string; mode?: string }) {
   return (
-    <div id="answer">
-      {route.length > 0 && <RouteMap route={route} budget={data.budget} onFilter={onFilter} activeVertical={filterVertical} />}
-
-      <StepsList data={data} />
-
-      <div className="my-4">
-        {summary && <p className="font-read text-[17px] leading-[1.65] max-w-[66ch]">{summary}</p>}
-        {typeof conf === "object" && conf && (
-          <p className="text-sm text-[var(--ink-2)]">Confidence: {conf.level}. {(conf.reasons || []).join("; ")}.</p>
-        )}
-        {typeof conf === "string" && <p className="text-sm text-[var(--ink-2)]">Confidence: {conf}.</p>}
-        {(data as ChatResponse).completeness?.state === "partial" && (
-          <p className="text-sm text-[var(--caution)]">
-            {(data as ChatResponse).completeness.message} <button type="button" className="btn !min-h-[32px] !py-1 ml-2" onClick={onRetry}>Retry</button>
-          </p>
-        )}
-        {(data as ChatResponse).completeness && (data as ChatResponse).completeness.state !== "partial" && (
-          <p className="text-sm text-[var(--ink-2)]">{(data as ChatResponse).completeness.message}</p>
-        )}
-        {/FINANCE|finance_snapshot/.test(intents + " " + (pres?.type || "")) && (
-          <p className="text-[13px] text-[var(--ink-3)]">Information only, not financial advice.</p>
-        )}
-        {/apply to|book (me|us|a |my)|buy .* for me|\bpurchase\b/i.test(data.query || "") && (
-          <div className="surface p-3 my-3" style={{ borderColor: "var(--fam-place)" }}>
-            <p className="m-0 text-sm">This assistant reads and compares. It doesn&apos;t buy, apply or book for you. Open the listings instead.</p>
-          </div>
-        )}
+    <div className="flex items-start gap-3">
+      <span aria-hidden="true" className="grid h-8 w-8 flex-none place-items-center rounded-full border border-[var(--line)] bg-[var(--surface)] text-[13px] text-[var(--ink-2)]">✳</span>
+      <div className="min-w-0">
+        <p className="tnum m-0 font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">You</p>
+        <h2 className="m-0 mt-0.5 text-balance text-[18px] font-semibold tracking-tight">{query.slice(0, 220)}</h2>
+        <p className="mt-1.5 flex flex-wrap gap-1.5">
+          {mode && mode !== "auto" && <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] capitalize text-[var(--ink-2)]">{mode}</span>}
+          <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] text-[var(--ink-2)]">
+            {kind === "agent" ? "Autonomous agent" : "Routed research"}
+          </span>
+        </p>
       </div>
-
-      {kind === "agent" && (data as AgentResponse).status === "clarify" ? (
-        <ClarifyInline question={(data as AgentResponse).clarifying_question || ""} onSkip={() => onRefine("__chat__")} />
-      ) : pres ? (
-        <PresentationView pres={pres} onSelect={onSelect} onSave={onSave} filterVertical={filterVertical} flashEid={flashEid} dismissed={dismissed} onDismiss={onDismiss} />
-      ) : (
-        <ResultsList results={(data as ChatResponse).results || []} showAll={showAll} setShowAll={setShowAll} leadResults={leadResults} filterVertical={filterVertical} flashEid={flashEid} onSelect={onSelect} onSave={onSave} dismissed={dismissed} onDismiss={onDismiss} />
-      )}
-
-      {(data.refinements || []).length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-3 items-center" aria-label="Refine">
-          <span className="text-[13px] text-[var(--ink-2)]">Refine:</span>
-          {(data.refinements || []).map((c) => (
-            <button key={c.id} type="button" className="chip" data-cost={c.estimated_calls} onClick={() => onRefine(c.id)}>
-              {c.label}{c.estimated_calls ? <span className="text-[var(--ink-3)]"> · ~{c.estimated_calls}</span> : null}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
-function ClarifyInline({ question, onSkip }: { question: string; onSkip: () => void }) {
+function AnswerBlock({ data, onRetry }: { data: ChatResponse & AgentResponse; onRetry: () => void }) {
+  const conf = data.confidence;
+  const comp = (data as ChatResponse).completeness;
+  const intents = ((data as ChatResponse).analysis?.intent || (data as AgentResponse).legacy_intents || []).join(" ");
   return (
-    <div className="surface p-4 my-4" style={{ borderLeft: "4px solid var(--ink)" }}>
-      <p className="m-0"><strong>One quick question: </strong>{question}</p>
-      <div className="mt-2"><button type="button" className="btn" onClick={onSkip}>Skip, use best guess</button></div>
+    <div>
+      <p className="tnum font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Answer</p>
+      {data.summary && (
+        <p className="font-reading mt-1 max-w-[68ch] text-[19px] leading-[1.6]">{data.summary.slice(0, 900)}</p>
+      )}
+      {typeof conf === "object" && conf && <ConfidenceLine level={conf.level} reasons={conf.reasons || []} />}
+      {typeof conf === "string" && <p className="mt-2 text-[13.5px] text-[var(--ink-2)]">Confidence: {conf}.</p>}
+      {comp?.message && (
+        <p className={`mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border p-2.5 text-[13.5px] ${
+          comp.state === "partial" ? "border-[var(--caution)]" : comp.state === "failed" ? "border-[var(--error)]" : "border-[var(--line)] text-[var(--ink-2)]"
+        }`}>
+          {comp.message.slice(0, 300)}
+          {comp.state === "partial" && <button type="button" className="btn !min-h-[32px] !py-1" onClick={onRetry}>Retry</button>}
+        </p>
+      )}
+      {/FINANCE|finance_snapshot/.test(`${intents} ${(data as AgentResponse).presentation?.type || ""}`) && (
+        <p className="mt-1.5 text-[12.5px] font-semibold text-[var(--caution)]">Information only, not financial advice.</p>
+      )}
+      {/apply to|book (me|us|a |my)|buy .* for me|\bpurchase\b/i.test(data.query || "") && (
+        <p className="surface mt-2 p-3 text-[13.5px]">
+          This assistant reads and compares. It does not buy, apply or book. Open the listings instead.
+        </p>
+      )}
     </div>
   );
 }
 
-function ResultsList({ results, showAll, setShowAll, leadResults, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss }: {
-  results: ApiResult[]; showAll: boolean; setShowAll: (v: boolean) => void;
-  leadResults: boolean; filterVertical: string | null; flashEid: string | null;
-  onSelect: (r: ApiResult, i: number, on: boolean) => void; onSave: (r: Record<string, unknown>) => void;
-  dismissed: Set<string>; onDismiss: (r: ApiResult) => void;
+function ResultsList({ results, visible, setVisible, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss, query }: {
+  results: ApiResult[]; visible: number; setVisible: (n: number) => void;
+  filterVertical: string | null; flashEid: string | null;
+  onSelect: (r: ApiResult, key: string, on: boolean) => void; onSave: (r: Record<string, unknown>) => void;
+  dismissed: Set<string>; onDismiss: (r: ApiResult) => void; query: string;
 }) {
   const key = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
-  const visible = results.filter((r) => !dismissed.has(key(r)) && (!filterVertical || (r._engine || "google_search") === filterVertical));
-  const shown = showAll ? visible.slice(0, 30) : visible.slice(0, 10);
-  const render = (r: ApiResult, i: number) => {
-    const k = detectKind(r);
-    const flash = flashEid && (r.evidence_ids || []).includes(flashEid) ? " flash" : "";
-    const wrap = (node: React.ReactNode) => <div key={i} className={flash}>{node}</div>;
-    if (k === "job") return wrap(<JobRow r={r} index={i} onSelect={onSelect} onDismiss={() => onSave({ dismissed: true, title: r.title })} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />);
-    if (k === "product") return wrap(<ProductTile r={r} index={i} featured={leadResults && i === 0} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />);
-    if (k === "paper") return wrap(<PaperEntry r={r} index={i} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />);
-    if (k === "video") return wrap(<VideoCard r={r} />);
-    return wrap(<PageRow r={r} index={i} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />);
-  };
+  const list = results.filter((r) => !dismissed.has(key(r)) && (!filterVertical || (r._engine || "google_search") === filterVertical));
+  const shown = list.slice(0, visible);
+  const shopping = list.some((r) => detectKind(r) === "product");
+
+  if (!list.length) return <EmptyResults query={query} onWiden={() => {}} />;
+
   return (
-    <>
-      {leadResults || results.some((r) => detectKind(r) === "product") ? (
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
-          {shown.map(render)}
+    <section aria-label="Results">
+      <h3 className="mb-1 flex items-center gap-2 text-[14.5px] font-semibold">
+        Results
+        <span className="tnum rounded-full border border-[var(--line)] px-2 py-0.5 font-mono text-[11px] font-normal text-[var(--ink-3)]">{list.length}</span>
+        {filterVertical && <span className="font-mono text-[11px] font-normal text-[var(--ink-3)]">filtered</span>}
+      </h3>
+      {shopping ? (
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {shown.map((r, i) => {
+            const k = `${key(r)}-${i}`;
+            const flash = flashEid && (r.evidence_ids || []).includes(flashEid) ? " flash" : "";
+            return (
+              <div key={k} className={flash}>
+                <ProductTile r={r} index={i} featured={i === 0}
+                  onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                  onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+              </div>
+            );
+          })}
         </div>
       ) : (
-        <div className="grid gap-3">{shown.map(render)}</div>
+        <div>
+          {shown.map((r, i) => {
+            const k = `${key(r)}-${i}`;
+            const flash = flashEid && (r.evidence_ids || []).includes(flashEid) ? " flash" : "";
+            const kind = detectKind(r);
+            return (
+              <div key={k} className={flash}>
+                {kind === "job" ? (
+                  <JobRow r={r} index={i}
+                    onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                    onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />
+                ) : kind === "product" ? (
+                  <ProductTile r={r} index={i}
+                    onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                    onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+                ) : kind === "paper" ? (
+                  <PaperEntry r={r} index={i}
+                    onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                    onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+                ) : kind === "video" ? (
+                  <VideoCard r={r} />
+                ) : kind === "news" ? (
+                  <NewsItem r={r} index={i}
+                    onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                    onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+                ) : (
+                  <PageRow r={r} index={i}
+                    onSelect={(rr, ii, on) => onSelect(rr, k, on)}
+                    onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
-      {visible.length > 10 && !showAll && (
-        <button type="button" className="btn mt-2" onClick={() => setShowAll(true)}>Show more ({visible.length - 10})</button>
+      {list.length > visible && (
+        <button type="button" className="btn mt-2" onClick={() => setVisible(visible + 20)}>
+          Show {Math.min(20, list.length - visible)} more ({list.length - visible} left)
+        </button>
       )}
-    </>
+    </section>
   );
 }
 
-import type { AgentPresentation } from "../lib/types";
-import type { Confidence } from "../lib/types";
-
-function PresentationView({ pres, onSelect, onSave, filterVertical, flashEid, dismissed, onDismiss }: {
-  pres: AgentPresentation; onSelect: (r: ApiResult, i: number, on: boolean) => void;
-  onSave: (r: Record<string, unknown>) => void; filterVertical: string | null; flashEid: string | null;
+function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss }: {
+  pres: AgentPresentation; filterVertical: string | null; flashEid: string | null;
+  onSelect: (r: ApiResult, key: string, on: boolean) => void;
+  onSave: (r: Record<string, unknown>) => void;
   dismissed: Set<string>; onDismiss: (r: ApiResult) => void;
 }) {
   const key = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
   if (pres.type === "shopping_top2") {
     return (
-      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
-        {(pres.picks || []).slice(0, 2).filter((item) => !dismissed.has(key(item))).map((item, i) => (
-          <ProductTile key={i} r={{ ...item, seller: item.seller || "", _engine: "google_shopping" }} index={i} featured={i === 0} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: item.title, url: item.url })} />
-        ))}
-      </div>
+      <section aria-label="Top picks">
+        <h3 className="mb-1 text-[14.5px] font-semibold">Top picks <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{(pres.picks || []).length}</span></h3>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {(pres.picks || []).slice(0, 4).filter((p) => !dismissed.has(key(p))).map((item, i) => (
+            <ProductTile key={i} r={{ ...item, seller: String(item.seller || ""), _engine: "google_shopping" }} index={i} featured={i === 0}
+              onSelect={(r, _ii, on) => onSelect(r, `pick-${i}`, on)}
+              onDismiss={() => onDismiss(item)} onSave={() => onSave({ title: item.title, url: item.url })} />
+          ))}
+        </div>
+      </section>
     );
   }
   if (pres.type === "youtube_path") {
     const order: [string, string][] = [["beginner", "Start here"], ["intermediate", "Go deeper"], ["advanced", "Master it"]];
     return (
-      <>
+      <div className="space-y-5">
         {order.map(([lvl, label]) => {
-          const vids = (pres.levels?.[lvl] || []).filter((v) => !filterVertical || filterVertical === "youtube");
+          const vids = ((pres.levels?.[lvl] || []) as ApiResult[]).filter(() => !filterVertical || filterVertical === "youtube");
           if (!vids.length) return null;
           return (
-            <div key={lvl}>
-              <h2 className="text-xl mt-6 mb-2">{label} ({vids.length})</h2>
-              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
+            <section key={lvl} aria-label={label}>
+              <h3 className="mb-1 text-[14.5px] font-semibold">{label} <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{vids.length}</span></h3>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {vids.map((v, i) => <VideoCard key={i} r={v} />)}
               </div>
-            </div>
+            </section>
           );
         })}
-      </>
+      </div>
     );
   }
   if (pres.type === "finance_snapshot") {
-    const qd = pres.quote || {};
+    const qd = (pres.quote || {}) as ApiResult;
     return (
-      <div>
-        <article className="border-t border-[var(--rule)] py-3">
-          <h3 className="text-[17px]">{String(qd.stock_name || qd.symbol || "Quote").slice(0, 120)}</h3>
-          <ul className="list-none m-1.5 p-0 text-sm text-[var(--ink-2)] flex flex-wrap gap-x-4 gap-y-1">
-            {( [["Symbol", qd.symbol], ["Price", qd.price], ["Change", [qd.price_change, qd.percent_change].filter(Boolean).join(" ") || ""], ["Exchange", qd.exchange]] as [string, unknown][] ).filter(([, v]) => v).map(([k, v]) => (
-              <li key={k}><strong className="text-[var(--ink)]">{k}: </strong>{String(v)}</li>
-            ))}
-          </ul>
-          {qd.summary && <p className="text-sm">{String(qd.summary).slice(0, 280)}</p>}
+      <section aria-label="Market snapshot" className="space-y-2">
+        <article className="surface p-4">
+          <p className="tnum font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">Snapshot</p>
+          <h3 className="mt-0.5 text-[18px] font-semibold tracking-tight">{String(qd.stock_name || qd.symbol || "Quote").slice(0, 110)}</h3>
+          <p className="tnum mt-1 font-mono text-[13px] text-[var(--ink-2)]">
+            {[["Price", qd.price], ["Change", [qd.price_change, qd.percent_change].filter(Boolean).join(" ")], ["Exchange", qd.exchange]]
+              .filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join(" · ").slice(0, 180)}
+          </p>
+          {qd.summary && <p className="mt-1.5 text-[14px] text-[var(--ink-2)]">{String(qd.summary).slice(0, 260)}</p>}
         </article>
         {(pres.headlines || []).map((h, i) => (
-          <article key={i} className="border-t border-[var(--rule)] py-3">
-            <h3 className="text-[17px] m-0"><a href={h.url} target="_blank" rel="noopener noreferrer nofollow" className="text-[var(--ink)]">{h.title.slice(0, 120)}</a></h3>
-            {h.date && <div className="text-[13px] text-[var(--ink-3)]">{h.date}</div>}
-          </article>
+          <PageRow key={i} r={{ title: h.title, url: h.url, date: h.date, source: h.source || "News" } as ApiResult} index={i}
+            onDismiss={() => {}} onSave={() => onSave({ title: h.title, url: h.url })} />
         ))}
-        {pres.disclaimer && <p className="text-[13px] text-[var(--ink-3)]">{pres.disclaimer}</p>}
-      </div>
+        {pres.disclaimer && <p className="text-[12.5px] text-[var(--ink-3)]">{pres.disclaimer}</p>}
+      </section>
     );
   }
   if (pres.type === "deep_dive") {
     return (
-      <div>
-        {pres.summary && <p className="font-read text-[17px] leading-[1.65] max-w-[66ch]">{pres.summary}</p>}
+      <div className="space-y-4">
+        {pres.summary && <p className="font-reading max-w-[68ch] text-[17px] leading-[1.65]">{pres.summary.slice(0, 600)}</p>}
         {(pres.findings || []).length > 0 && (
-          <>
-            <h2 className="text-xl mt-6 mb-2">Key findings</h2>
-            <ol>{(pres.findings || []).map((f, i) => (
-              <li key={i} className="my-1 text-[15px]">{String(f.claim || f.title || "").slice(0, 280)} <a href={f.url} target="_blank" rel="noopener noreferrer nofollow" className="text-sm">source</a></li>
-            ))}</ol>
-          </>
+          <section aria-label="Key findings">
+            <h3 className="mb-1 text-[14.5px] font-semibold">Key findings</h3>
+            <ol className="m-0 space-y-1.5 pl-5 text-[14.5px]">
+              {(pres.findings || []).map((f, i) => (
+                <li key={i}>{String(f.claim || f.title || "").slice(0, 260)} <a href={f.url} target="_blank" rel="noopener noreferrer nofollow" className="text-[13px]">source</a></li>
+              ))}
+            </ol>
+          </section>
         )}
         {(pres.papers || []).length > 0 && (
-          <>
-            <h2 className="text-xl mt-6 mb-2">Papers</h2>
-            {(pres.papers || []).map((r, i) => <PaperEntry key={i} r={r} index={i} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />)}
-          </>
+          <section aria-label="Papers">
+            <h3 className="mb-1 text-[14.5px] font-semibold">Papers</h3>
+            {(pres.papers || []).map((r, i) => (
+              <PaperEntry key={i} r={r} index={i}
+                onSelect={(rr, _ii, on) => onSelect(rr, `paper-${i}`, on)}
+                onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+            ))}
+          </section>
         )}
       </div>
     );
   }
   if (pres.type === "travel_choices") {
     return (
-      <div>
-        <p className="text-sm text-[var(--ink-2)]">{pres.note || "Planned and ready — no booking performed."}</p>
+      <div className="space-y-4">
+        <p className="text-[13.5px] text-[var(--ink-2)]">{pres.note || "Planned and ready. Booking happens on provider sites."}</p>
         {( [["Flights", pres.flights], ["Hotels", pres.hotels], ["Places", pres.places]] as [string, ApiResult[] | undefined][] ).map(([label, list]) => {
-          const arr = list || [];
+          const arr = (list || []).filter((r) => !dismissed.has(key(r)));
           if (!arr.length) return null;
           return (
-            <div key={label}>
-              <h2 className="text-xl mt-6 mb-2">{label}</h2>
-              {arr.map((r, i) => <PageRow key={i} r={r} index={i} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />)}
-            </div>
+            <section key={label} aria-label={label}>
+              <h3 className="mb-1 text-[14.5px] font-semibold">{label}</h3>
+              {arr.map((r, i) => (
+                <PageRow key={i} r={r} index={i} onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+              ))}
+            </section>
           );
         })}
       </div>
@@ -568,77 +692,60 @@ function PresentationView({ pres, onSelect, onSave, filterVertical, flashEid, di
   }
   if (pres.type === "learning_plan") {
     return (
-      <div>
-        {pres.goal && <p className="font-read text-[17px] leading-[1.65] max-w-[66ch]">{pres.goal}</p>}
-        <ol className="list-none m-0 p-0">
+      <section aria-label="Learning path">
+        {pres.goal && <p className="font-reading max-w-[68ch] text-[17px] leading-[1.65]">{pres.goal.slice(0, 400)}</p>}
+        <ol className="m-0 mt-2 list-none space-y-0 p-0">
           {(pres.stages || []).map((s) => (
-            <li key={s.stage} className="relative pl-7 pb-4">
-              <span aria-hidden="true" className="absolute left-0 top-[2px] w-[18px] h-[18px] rounded-full border-2 border-[var(--control)] bg-[var(--surface)]" />
-              <strong>{s.stage}: </strong>
-              {(s.topics || []).map((t, i) => (
-                <span key={i}> <a href={t.url} target="_blank" rel="noopener noreferrer nofollow">{t.title.slice(0, 80)}</a>;</span>
-              ))}
+            <li key={s.stage} className="relative pb-4 pl-7">
+              <span aria-hidden="true" className="absolute left-0 top-[3px] h-[18px] w-[18px] rounded-full border-2 border-[var(--control)] bg-[var(--surface)]" />
+              <span aria-hidden="true" className="absolute bottom-0 left-[8px] top-[24px] w-[2px] bg-[var(--line)]" />
+              <strong className="text-[14px]">{s.stage}: </strong>
+              <span className="text-[14px] text-[var(--ink-2)]">
+                {(s.topics || []).map((t, i) => (
+                  <span key={i}>{i > 0 && " · "}<a href={t.url} target="_blank" rel="noopener noreferrer nofollow">{t.title.slice(0, 72)}</a></span>
+                ))}
+              </span>
             </li>
           ))}
         </ol>
-      </div>
+      </section>
     );
   }
-  const list = (pres.jobs || pres.places || pres.results || []).filter((r) => !dismissed.has(key(r)));
+  const list = ((pres.jobs || pres.places || pres.results || []) as ApiResult[]).filter((r) => !dismissed.has(key(r)));
+  void flashEid;
   return (
-    <div className="grid gap-3">
-      {list.slice(0, 10).map((r, i) => {
-        const k = detectKind(r);
-        if (k === "job") return <JobRow key={i} r={r} index={i} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />;
-        if (k === "product") return <ProductTile key={i} r={r} index={i} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />;
-        if (k === "paper") return <PaperEntry key={i} r={r} index={i} onSelect={onSelect} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />;
-        if (k === "video") return <VideoCard key={i} r={r} />;
-        return <PageRow key={i} r={r} index={i} onDismiss={onDismiss} onSave={() => onSave({ title: r.title, url: r.url })} />;
-      })}
-    </div>
+    <section aria-label="Results">
+      <div className="grid gap-0">
+        {list.slice(0, 10).map((r, i) => {
+          const kind = detectKind(r);
+          if (kind === "job") return <JobRow key={i} r={r} index={i}
+            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />;
+          if (kind === "product") return <ProductTile key={i} r={r} index={i}
+            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
+          if (kind === "paper") return <PaperEntry key={i} r={r} index={i}
+            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
+          if (kind === "video") return <VideoCard key={i} r={r} />;
+          return <PageRow key={i} r={r} index={i} onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
+        })}
+      </div>
+    </section>
   );
 }
 
-function StepsList({ data }: { data: ChatResponse & AgentResponse }) {
-  const a = (data as ChatResponse).analysis || (data as AgentResponse).classification || {};
-  const intents = (a as { intent?: string[] }).intent || ((a as { use_case?: string }).use_case ? [(a as { use_case?: string }).use_case as string] : []);
-  const steps = ((a as { steps?: { engine: string; query: string }[] }).steps || (data as ChatResponse).plan || []).filter((s) => (s as { tool?: string }).tool || (s as { engine?: string }).engine);
-  const f = data.funnel;
+function RefineRow({ refinements, onRefine }: { refinements: { id: string; label: string; estimated_calls?: number }[]; onRefine: (id: string) => void }) {
+  if (!refinements.length) return null;
   return (
-    <details className="my-3">
-      <summary className="cursor-pointer min-h-[44px] inline-flex items-center font-semibold text-sm">Research steps</summary>
-      <dl className="text-sm">
-        <dt className="font-semibold text-[var(--ink-2)] mt-2">Understood as</dt>
-        <dd className="m-0">{intents.join(" · ") || "—"}</dd>
-        {steps.length > 0 && (
-          <>
-            <dt className="font-semibold text-[var(--ink-2)] mt-2">Searches</dt>
-            <dd className="m-0">
-              {steps.map((s, i) => {
-                const tool = (s as { tool?: string }).tool || (s as { engine?: string }).engine || "";
-                const line = (data.route || []).find((l) => l.vertical === tool);
-                return <div key={i}>{tool}: &ldquo;{String(s.query).slice(0, 80)}&rdquo;{line ? ` — ${line.result_count} found` : ""}</div>;
-              })}
-            </dd>
-          </>
-        )}
-        {f && (
-          <>
-            <dt className="font-semibold text-[var(--ink-2)] mt-2">Results</dt>
-            <dd className="m-0">
-              {f.discovered} found · {f.matched} matched · {f.set_aside} set aside
-              {f.reasons?.length > 0 && (
-                <details className="text-[13px] text-[var(--ink-2)]">
-                  <summary className="cursor-pointer min-h-[44px] inline-flex items-center">Why set aside: {f.reasons.map((r) => `${r.label} (${r.count})`).join(", ")}</summary>
-                  {(f.set_aside_results || []).map((r, i) => (
-                    <div key={i}>{String(r.title || r.name || "item")} — {r.set_aside_reason}</div>
-                  ))}
-                </details>
-              )}
-            </dd>
-          </>
-        )}
-      </dl>
-    </details>
+    <div className="flex flex-wrap items-center gap-2" aria-label="Refine">
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Refine</span>
+      {refinements.slice(0, 5).map((c) => (
+        <button key={c.id} type="button" className="chip !min-h-[36px]" onClick={() => onRefine(c.id)}>
+          {c.label}
+          {c.estimated_calls ? <span className="tnum font-mono text-[11px] text-[var(--ink-3)]">~{c.estimated_calls}</span> : null}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -1,91 +1,283 @@
 <!doctype html>
-<html lang="en" data-theme="system">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Ask in plain language. The agent chooses where to research and shows its work.">
+<meta name="color-scheme" content="dark light">
 <title>Serp Intelligence — Universal Web Intelligence</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230A0E14'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23E8EDF3' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%234ADE80'/%3E%3C/svg%3E">
 </head>
 <body>
-<a class="skip" href="#answer">Skip to answer</a>
-<a class="skip" href="#composer">Skip to composer</a>
-<a class="skip" href="#sources">Skip to sources</a>
-<header class="top"><div class="top-inner">
-<div class="brand">Serp Intelligence<small>You ask. The agent chooses how to research it.</small></div>
-<div class="top-actions">
-<button class="btn" id="marginBtn" type="button" aria-expanded="false">Sources (<span id="srcCountTop">0</span>)</button>
-<button class="btn" id="themeBtn" type="button">Theme: system</button>
+<a class="skip" href="#thread">Skip to answer</a>
+<a class="skip" href="#composerInput">Skip to composer</a>
+<a class="skip" href="#inspector">Skip to sources</a>
+
+<div class="app" id="app">
+  <!-- ══════════ COMMAND BAR ══════════ -->
+  <header class="cmdbar" role="banner">
+    <div class="cmdbar-left">
+      <button class="iconbtn rail-toggle" id="railToggle" type="button" aria-label="Toggle library" aria-expanded="true">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></svg>
+      </button>
+      <div class="brandmark" aria-label="Serp Intelligence home">
+        <span class="mark" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect width="32" height="32" rx="9" fill="var(--ink)"/>
+            <circle cx="16" cy="16" r="7.5" stroke="var(--bg)" stroke-width="1.8"/>
+            <circle cx="16" cy="16" r="2.4" fill="#4ADE80"/>
+            <path d="M16 4.5v3M16 24.5v3M4.5 16h3M24.5 16h3" stroke="var(--bg)" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <span class="brandtext">
+          <strong>Serp Intelligence</strong>
+          <span class="brandsub">Universal web intelligence</span>
+        </span>
+      </div>
+    </div>
+    <div class="cmdbar-center">
+      <button class="statuspill" id="statusPill" type="button" aria-live="polite" title="Agent status">
+        <span class="pulse" id="statusDot" aria-hidden="true"></span>
+        <span id="statusPillText">Ready</span>
+      </button>
+    </div>
+    <div class="cmdbar-right">
+      <button class="iconbtn" id="paletteBtn" type="button" aria-label="Command palette (Ctrl K)" title="Command palette">
+        <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.2"/><path d="m12 12 3.2 3.2"/></svg>
+        <kbd>⌘K</kbd>
+      </button>
+      <button class="iconbtn" id="inspectorBtn" type="button" aria-label="Toggle evidence panel" aria-expanded="true" title="Evidence panel">
+        <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="14" height="13" rx="2.5"/><path d="M10.5 2.5v13"/></svg>
+      </button>
+      <button class="iconbtn" id="themeBtn" type="button" aria-label="Toggle theme" title="Theme">
+        <svg id="themeIconMoon" width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 11.2A6.3 6.3 0 0 1 6.8 3.5a6.3 6.3 0 1 0 7.7 7.7Z"/></svg>
+      </button>
+      <span class="operator-chip" id="usageChip" title="Search usage">— searches</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- ══════════ LIBRARY RAIL ══════════ -->
+    <nav class="rail" id="rail" aria-label="Library">
+      <div class="rail-scroll">
+        <button class="newbtn" id="newBtn" type="button">
+          <span class="newbtn-icon" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          </span>
+          New research
+          <kbd class="newbtn-kbd">N</kbd>
+        </button>
+
+        <div class="rail-search">
+          <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="5.2"/><path d="m12 12 3.2 3.2"/></svg>
+          <input id="railFilter" type="search" placeholder="Filter threads" aria-label="Filter threads" autocomplete="off">
+        </div>
+
+        <section aria-labelledby="rh-today">
+          <h2 class="rail-h" id="rh-today">Recent</h2>
+          <div id="convs" class="rail-list" role="list"></div>
+        </section>
+
+        <section aria-labelledby="rh-saved">
+          <h2 class="rail-h" id="rh-saved">Collections <span class="rail-count" id="savedCount"></span></h2>
+          <div id="saved" class="rail-list" role="list"></div>
+          <p class="rail-note">Saved on this device only.</p>
+        </section>
+
+        <section aria-labelledby="rh-ops">
+          <h2 class="rail-h" id="rh-ops">Operator</h2>
+          <div class="ops-card">
+            <div class="ops-row"><span>Queries</span><strong id="opsQueries">—</strong></div>
+            <div class="ops-row"><span>Searches</span><strong id="opsCalls">—</strong></div>
+            <div class="meter" role="img" aria-label="Search usage meter"><span id="opsMeter"></span></div>
+            <div class="ops-row dim"><span>Failed</span><span id="opsFailed">—</span></div>
+          </div>
+        </section>
+      </div>
+      <div class="rail-foot">
+        <p class="reads-only"><span class="ro-dot" aria-hidden="true"></span>Reads and compares. Never buys, applies or books.</p>
+        <p class="shortcuts"><kbd>↵</kbd> research &nbsp;·&nbsp; <kbd>⇧↵</kbd> newline &nbsp;·&nbsp; <kbd>⌘K</kbd> commands</p>
+      </div>
+    </nav>
+
+    <!-- ══════════ CANVAS ══════════ -->
+    <main class="canvas" id="main">
+      <div class="canvas-scroll" id="canvasScroll">
+        <!-- HERO -->
+        <section class="hero" id="hero" aria-label="Ask a question">
+          <div class="hero-top">
+            <span class="livebadge"><span class="livebadge-dot" aria-hidden="true"></span><span id="engineBadge">15 verticals · live</span></span>
+            <span class="hero-time" id="heroTime"></span>
+          </div>
+          <h1 class="hero-h">What do you want<br>to <em>figure out?</em></h1>
+          <p class="hero-sub">Ask in your own words. The agent picks the sources, runs the searches, and shows every step.</p>
+
+          <!-- COMPOSER ISLAND : double bezel -->
+          <div class="composer-shell">
+            <div class="composer" id="composer">
+              <label class="visually-hidden" for="composerInput">Your question</label>
+              <textarea id="composerInput" rows="2" maxlength="2000" placeholder="Describe what you want to find, decide or learn…" aria-label="Your question" autocomplete="off" spellcheck="true"></textarea>
+              <div class="composer-meta-row">
+                <span class="charcount" id="charCount" aria-live="off"></span>
+                <span class="composer-hint">The assistant chooses where to look</span>
+              </div>
+              <div class="composer-bar" role="toolbar" aria-label="Research options">
+                <div class="modeseg" role="radiogroup" aria-label="Mode" id="modeSeg">
+                  <button type="button" role="radio" aria-checked="true" data-mode="auto" class="modeseg-btn is-on">Auto</button>
+                  <button type="button" role="radio" aria-checked="false" data-mode="research" class="modeseg-btn">Research</button>
+                  <button type="button" role="radio" aria-checked="false" data-mode="shopping" class="modeseg-btn">Shopping</button>
+                  <button type="button" role="radio" aria-checked="false" data-mode="jobs" class="modeseg-btn">Jobs</button>
+                  <button type="button" role="radio" aria-checked="false" data-mode="learning" class="modeseg-btn">Learn</button>
+                  <button type="button" role="radio" aria-checked="false" data-mode="travel" class="modeseg-btn">Travel</button>
+                </div>
+                <div class="composer-actions">
+                  <button class="deepbtn" id="deepBtn" type="button" aria-pressed="false" title="Deep research uses more searches and cross checks sources">
+                    <span class="switch" aria-hidden="true"><span class="knob"></span></span>
+                    Deep
+                  </button>
+                  <button class="sendbtn" id="sendBtn" type="button" aria-label="Start research">
+                    <span class="sendbtn-label">Research</span>
+                    <span class="sendbtn-arrow" aria-hidden="true">
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>
+                    </span>
+                  </button>
+                  <button class="sendbtn agentbtn" id="agentBtn" type="button" aria-label="Run autonomous agent" title="Autonomous LLM agent">
+                    <span class="sendbtn-label">Agent</span>
+                  </button>
+                  <button class="stopbtn" id="stopBtn" type="button" hidden>
+                    <span class="stop-sq" aria-hidden="true"></span>Stop
+                  </button>
+                </div>
+              </div>
+              <div class="filterrow" id="filterRow" hidden aria-label="Understood filters"></div>
+            </div>
+          </div>
+
+          <div class="likeroute" id="likeRoute" hidden>
+            <span class="likeroute-label">Likely route</span>
+            <span class="likeroute-chips" id="likeChips"></span>
+          </div>
+
+          <!-- GOALS : asymmetric bento -->
+          <div class="goals" id="goals" role="group" aria-label="Start from a goal">
+            <button type="button" class="goal goal-hero" data-t="Compare products: ___ vs ___">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 3.5h6M7 16.5h6M4 7l3-3.5M4 7l3 3.5M4 7h6M16 13l-3-3.5M16 13l-3 3.5M16 13H8"/></svg></span>
+              <span class="goal-t"><strong>Compare products</strong><span>Price, specs, trade offs</span></span>
+              <span class="goal-k" aria-hidden="true">→</span>
+            </button>
+            <button type="button" class="goal" data-t="Find software engineering internships in Bengaluru for this summer">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="13" rx="2.5"/><path d="M7 4V2.8M13 4V2.8M3 8.5h14"/></svg></span>
+              <span class="goal-t"><strong>Find roles</strong><span>Internships and jobs</span></span>
+            </button>
+            <button type="button" class="goal" data-t="Research ">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="9" cy="9" r="5.5"/><path d="m13.2 13.2 3.3 3.3"/></svg></span>
+              <span class="goal-t"><strong>Research a topic</strong><span>Papers, news, context</span></span>
+            </button>
+            <button type="button" class="goal" data-t="Build a learning plan for ">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.8 3 5.5l7 2.7 7-2.7-7-2.7ZM3.5 9.5l6.5 2.5 6.5-2.5M3.5 13l6.5 2.5L16.5 13"/></svg></span>
+              <span class="goal-t"><strong>Learning plan</strong><span>Ordered, with sources</span></span>
+            </button>
+            <button type="button" class="goal" data-t="Plan a 4 day trip to ">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17.5S3.8 12 3.8 7.3a6.2 6.2 0 0 1 12.4 0C16.2 12 10 17.5 10 17.5Z"/><circle cx="10" cy="7.3" r="2.2"/></svg></span>
+              <span class="goal-t"><strong>Plan a trip</strong><span>Stays, flights, places</span></span>
+            </button>
+            <button type="button" class="goal" data-t="What changed in  recently?">
+              <span class="goal-ico" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10a7 7 0 0 1 12.5-4.4M17 10a7 7 0 0 1-12.5 4.4"/><path d="M15.5 2.5v3h-3M4.5 17.5v-3h3"/></svg></span>
+              <span class="goal-t"><strong>What changed</strong><span>Fresh news and trends</span></span>
+            </button>
+          </div>
+
+          <div class="recentrow" id="recentRow" aria-label="Suggestions"></div>
+        </section>
+
+        <!-- THREAD -->
+        <div class="thread" id="thread" aria-label="Research thread" aria-live="off"></div>
+
+        <div class="statusline" id="statusLine" role="status" aria-live="polite"></div>
+        <div class="sr-only" id="srStatus" role="status" aria-live="polite"></div>
+      </div>
+
+      <!-- DOCK : mini follow up composer -->
+      <div class="dock" id="dock" hidden>
+        <div class="dock-inner">
+          <label class="visually-hidden" for="dockInput">Ask a follow up</label>
+          <input id="dockInput" type="text" maxlength="2000" placeholder="Ask a follow up…" autocomplete="off" aria-label="Ask a follow up">
+          <button class="iconbtn sendmini" id="dockSend" type="button" aria-label="Send follow up">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5"/></svg>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ══════════ INSPECTOR ══════════ -->
+    <aside class="inspector" id="inspector" aria-label="Sources and evidence">
+      <div class="insp-tabs" role="tablist" aria-label="Inspector tabs">
+        <button role="tab" aria-selected="true" class="insp-tab is-on" data-tab="sources" id="tabSources" type="button">Sources <span class="tabcount" id="srcCount">0</span></button>
+        <button role="tab" aria-selected="false" class="insp-tab" data-tab="steps" id="tabSteps" type="button">Steps</button>
+        <button role="tab" aria-selected="false" class="insp-tab" data-tab="detail" id="tabDetail" type="button">Detail</button>
+      </div>
+      <div class="insp-body">
+        <div class="insp-pane is-on" data-pane="sources" role="tabpanel" aria-labelledby="tabSources">
+          <p class="insp-hint" id="srcHint">Evidence appears here as the agent reads. Select any claim to trace it.</p>
+          <ol class="srclist" id="sources"></ol>
+        </div>
+        <div class="insp-pane" data-pane="steps" role="tabpanel" aria-labelledby="tabSteps">
+          <div id="stepsPane"><p class="insp-hint">The plan, funnel and filter reasons appear here during a run.</p></div>
+        </div>
+        <div class="insp-pane" data-pane="detail" role="tabpanel" aria-labelledby="tabDetail">
+          <div id="detailPane"><p class="insp-hint">Budget, confidence and run metadata appear here.</p></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- COMPARE TRAY -->
+  <div class="tray" id="tray" hidden>
+    <div class="tray-inner">
+      <span class="tray-count" id="trayCount">0 selected</span>
+      <span class="tray-items" id="trayItems"></span>
+      <span class="tray-spacer"></span>
+      <button class="btn ghost" id="trayClear" type="button">Clear</button>
+      <button class="btn solid" id="trayCompare" type="button">Compare</button>
+    </div>
+  </div>
+  <div class="compare-veil" id="cmpVeil" hidden>
+    <div class="compare-sheet" role="dialog" aria-modal="true" aria-label="Comparison">
+      <div class="compare-head">
+        <strong>Compare</strong>
+        <span class="compare-sub" id="cmpSub"></span>
+        <span class="tray-spacer"></span>
+        <label class="diffonly"><input type="checkbox" id="diffOnly"> Differences only</label>
+        <button class="iconbtn" id="cmpClose" type="button" aria-label="Close comparison">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+      <div class="compare-body" id="cmpBody"></div>
+    </div>
+  </div>
+
+  <!-- COMMAND PALETTE -->
+  <div class="pal-veil" id="palVeil" hidden>
+    <div class="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="pal-input-row">
+        <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="5.2"/><path d="m12 12 3.2 3.2"/></svg>
+        <input id="palInput" type="text" placeholder="Type a command or ask anything…" aria-label="Command palette" autocomplete="off">
+        <kbd>esc</kbd>
+      </div>
+      <div class="pal-list" id="palList" role="listbox" aria-label="Commands"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <footer class="appfoot">
+    <p>Results are live web data. Check important claims at the source. Anonymous use keeps threads in this browser unless saved.</p>
+  </footer>
 </div>
-</div></header>
-<div class="layout">
-<nav class="rail" aria-label="Library">
-<div>
-<h2>Research</h2>
-<div class="btn-row" style="margin-top:0"><button class="btn btn-primary" id="newBtn" type="button">New research</button></div>
-<h2>Conversations</h2>
-<div id="convs"></div>
-<h2>Saved research</h2>
-<div id="saved"></div>
-<p class="meta">Saved on this device only.</p>
-<button class="btn" id="clearSaved" type="button">Clear saved</button>
-<h2>Operator</h2>
-<details id="usageBox"><summary>Usage</summary><div id="usage" class="meta">Loading…</div></details>
-<p class="meta" id="apiBase">Backend: same origin</p>
-</div>
-</nav>
-<main class="main" id="main">
-<section class="hero" id="hero" aria-label="Ask">
-<h1>What do you want to find out?</h1>
-<p class="lede" id="firstHelp">Ask in your own words. The assistant chooses where to look.</p>
-<div class="composer" id="composer">
-<label class="visually-hidden" for="q">Your question</label>
-<textarea id="q" rows="2" maxlength="500" aria-label="Your question" placeholder="Describe what you want to find, decide or learn"></textarea>
-<div class="composer-row" role="toolbar" aria-label="Research options">
-<div class="mode-pills" role="radiogroup" aria-label="Mode">
-<label><input type="radio" name="mode" value="auto" checked> Auto</label>
-<label><input type="radio" name="mode" value="research"> Research</label>
-<label><input type="radio" name="mode" value="shopping"> Shopping</label>
-<label><input type="radio" name="mode" value="jobs"> Jobs</label>
-<label><input type="radio" name="mode" value="learning"> Learning</label>
-<label><input type="radio" name="mode" value="travel"> Travel</label>
-</div>
-<label class="deep-toggle"><input type="checkbox" id="deep" aria-label="Deep research"> Deep research <span class="meta" id="deepEst"></span></label>
-<button class="btn btn-primary" id="go" type="button">Research</button>
-<button class="btn btn-primary" id="agentGo" type="button">Agent (LLM)</button>
-<button class="btn" id="stopBtn" type="button" hidden>Stop</button>
-</div>
-<div class="filters" id="filterRow" style="display:none" aria-label="Understood filters"></div>
-</div>
-<div class="btn-row" aria-label="Start from a goal" id="goals">
-<button type="button" data-t="Compare products: ___ vs ___">Compare products</button>
-<button type="button" data-t="Find roles or internships in ___">Find roles or internships</button>
-<button type="button" data-t="Research ___">Research a topic</button>
-<button type="button" data-t="Build a learning plan for ___">Build a learning plan</button>
-<button type="button" data-t="Plan a trip to ___">Plan a trip</button>
-<button type="button" data-t="What changed in ___ recently?">Check what's changed</button>
-</div>
-<div class="recent" id="recent" aria-label="Recent"></div>
-</section>
-<div id="planSlot"></div>
-<div id="status" role="status" aria-live="polite"></div>
-<div class="sr-status" id="srStatus" role="status"></div>
-<div id="answer" aria-label="Answer"></div>
-<div id="cards"></div>
-<div id="cmpWrap"></div>
-</main>
-<aside class="margin" id="margin" aria-label="Sources and evidence">
-<h2>Sources (<span id="srcCount">0</span>)</h2>
-<ol class="src-list" id="sources"></ol>
-</aside>
-</div>
-<div class="toast" id="toast" role="status"></div>
-<footer class="app-foot">
-<p>This assistant reads and compares. It doesn't buy, apply or book for you. Results are live web data: check important claims at the source. Anonymous use: conversations stay in this browser unless you save them.</p>
-</footer>
+
 <script src="app.js"></script>
 </body>
 </html>
