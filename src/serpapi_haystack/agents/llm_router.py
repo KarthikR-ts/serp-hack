@@ -34,6 +34,14 @@ from .intents import QueryAnalysis, _BUDGET_RE, _LEARN_RE, _SHOP_RE, classify_qu
 from ..toolsets import TOOL_FACTORIES
 from ..utils.limits import BudgetLimits, BudgetTracker
 from ..utils.observability import RunTrace, ToolCallRecord
+from ..utils.presentation import (
+    apply_funnel,
+    attach_evidence,
+    build_route,
+    confidence_with_reasons,
+    refinements_for,
+    why_for,
+)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -67,6 +75,7 @@ PRESENTATIONS = [
     "jobs_table",
     "travel_choices",
     "local_list",
+    "learning_plan",
     "generic",
 ]
 
@@ -459,6 +468,34 @@ def build_presentation(
         }
     if presentation == "local_list":
         return {"type": "local_list", "places": ranked[:8], "summary": ranking.get("summary", "")}
+    if presentation == "learning_plan":
+        stages = ["Goal", "Prerequisites", "Fundamentals", "Resources", "Projects", "Papers", "Advanced"]
+        pools = {
+            "Prerequisites": [r for r in ranked if r.get("_engine") == "google_search"],
+            "Fundamentals": [r for r in ranked if r.get("_engine") == "google_search"],
+            "Resources": [r for r in ranked if r.get("_engine") in ("youtube", "google_search")],
+            "Projects": [r for r in ranked if r.get("_engine") in ("google_forums", "google_search")],
+            "Papers": [r for r in ranked if r.get("_engine") == "google_scholar"],
+            "Advanced": [r for r in ranked if r.get("_engine") == "google_scholar"],
+        }
+        plan_stages = []
+        for stage in stages[1:]:
+            items = (pools.get(stage) or ranked)[:3]
+            plan_stages.append(
+                {
+                    "stage": stage,
+                    "topics": [
+                        {"title": it.get("title", ""), "url": it.get("url", ""), "why": reason_for(it)}
+                        for it in items
+                    ],
+                }
+            )
+        return {
+            "type": "learning_plan",
+            "goal": ranking.get("summary", ""),
+            "stages": plan_stages,
+            "summary": ranking.get("summary", ""),
+        }
     return {"type": "generic", "results": ranked[:10], "summary": ranking.get("summary", "")}
 
 
@@ -470,36 +507,94 @@ def _confidence(total: int, errors: int) -> str:
     return "low"
 
 
-def run_agent(query: str, complete: CompleteFn | None = None, num_results: int = 8) -> dict[str, Any]:
+def run_agent(
+    query: str,
+    complete: CompleteFn | None = None,
+    num_results: int = 8,
+    constraints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Run the autonomous 3-pass flow. Read-only; stops before any action."""
+    import time as _time
+
+    started = _time.monotonic()
     resolve_llm_key()  # fail fast with a clear error when unconfigured
     plan = classify_with_llm(query, complete=complete)
     if plan.needs_clarification and plan.clarifying_question:
         return {
             "status": "clarify",
             "query": query,
+            "model": resolve_model(),
             "classification": plan.to_dict(),
             "clarifying_question": plan.clarifying_question,
         }
+    constraints = constraints or {}
     for step in plan.steps:
         step.num_results = max(1, min(step.num_results, num_results, 10))
     tool_outputs, trace = execute_plan(plan)
     trace.intent = [plan.use_case]
     trace.tools_selected = [s.engine for s in plan.steps]
     flat = [r for out in tool_outputs for r in (out.get("results", []) or [])]
-    ranking = rank_with_llm(query, flat, complete=complete)
-    presentation = build_presentation(plan, tool_outputs, ranking)
+    funnel = apply_funnel(flat, constraints)
+    matched = funnel["matched_results"]
+    ranking = rank_with_llm(query, matched, complete=complete)
+    order = [i for i in (ranking.get("order") or []) if 0 <= i < len(matched)]
+    order += [i for i in range(len(matched)) if i not in order]
+    ranked_flat = [matched[i] for i in order]
+    new_index = {id(matched[i]): pos for pos, i in enumerate(order)}
+    reasons: dict[str, str] = {}
+    for k, v in (ranking.get("reasons", {}) or {}).items():
+        try:
+            orig = int(k)
+            if 0 <= orig < len(matched) and id(matched[orig]) in new_index and isinstance(v, str):
+                reasons[str(new_index[id(matched[orig])])] = v[:200]
+        except (TypeError, ValueError):
+            continue
+    ordered_ranking = {"order": list(range(len(ranked_flat))), "reasons": reasons, "summary": ranking.get("summary", "")}
+    by_id = {id(r) for r in ranked_flat}
+    filtered_outputs = []
+    for out in tool_outputs:
+        kept = [r for r in (out.get("results", []) or []) if id(r) in by_id]
+        filtered_outputs.append({**out, "results": kept})
+    presentation = build_presentation(plan, filtered_outputs, ordered_ranking)
     evidence = [e for out in tool_outputs for e in (out.get("evidence", []) or [])]
+    agent_results = [r for out in filtered_outputs for r in (out.get("results", []) or [])]
+    for i, r in enumerate(agent_results):
+        r["why"] = why_for(r, constraints, i, len(agent_results))
+    _, linked_evidence = attach_evidence(agent_results[:30], evidence[:30])
+    url_to_ids: dict[str, list[str]] = {}
+    for e in linked_evidence:
+        key = str(e.get("source_url", "") or "").rstrip("/").lower()
+        if key:
+            url_to_ids.setdefault(key, []).append(e.get("id", ""))
+
+    def _inject(node: Any) -> None:
+        if isinstance(node, dict):
+            url = str(node.get("url", "") or "").rstrip("/").lower()
+            if url and url in url_to_ids:
+                node["evidence_ids"] = url_to_ids[url]
+            for v in node.values():
+                _inject(v)
+        elif isinstance(node, list):
+            for v in node:
+                _inject(v)
+
+    _inject(presentation)
     errors = len(trace.summary()["errors"])
+    route = build_route([s.engine for s in plan.steps], trace.calls)
+    ok_lines = [line for line in route if line["status"] == "ok"]
     sources = [
         {
+            "id": e.get("id", ""),
             "title": (e.get("source_title") or "")[:200],
             "url": e.get("source_url") or "",
+            "domain": e.get("domain", ""),
             "type": e.get("source_type") or "",
             "claim": (e.get("extracted_claim") or "")[:300],
+            "claim_type": str(e.get("kind", "FACT")).lower(),
             "tool": e.get("tool_used") or "",
+            "date": e.get("timestamp"),
         }
-        for e in evidence[:30]
+        for e in linked_evidence
     ]
     # Deterministic regex analysis alongside, for trace continuity.
     legacy = classify_query(query)
@@ -509,11 +604,27 @@ def run_agent(query: str, complete: CompleteFn | None = None, num_results: int =
         "model": resolve_model(),
         "classification": plan.to_dict(),
         "legacy_intents": legacy.intent,
+        "constraints": constraints,
         "presentation": presentation,
         "sources": sources,
-        "results_count": len(flat),
-        "evidence_count": len(evidence),
-        "confidence": plan.confidence if flat else "low",
+        "results_count": len(agent_results),
+        "evidence_count": len(linked_evidence),
+        "funnel": {
+            "discovered": funnel["discovered"],
+            "matched": funnel["matched"],
+            "set_aside": funnel["set_aside"],
+            "reasons": funnel["reasons"],
+            "set_aside_results": funnel["set_aside_results"],
+        },
+        "route": route,
+        "confidence": confidence_with_reasons(len(agent_results), errors, len(ok_lines), constraints),
+        "refinements": refinements_for(plan.use_case),
+        "budget": {
+            "calls_used": trace.summary()["serpapi_calls"],
+            "calls_limit": 5,
+            "seconds_used": round(_time.monotonic() - started, 1),
+            "seconds_limit": 45.0,
+        },
         "research_trace": trace.summary(),
         "summary": ranking.get("summary", ""),
     }

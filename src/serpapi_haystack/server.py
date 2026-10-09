@@ -36,6 +36,17 @@ from serpapi_haystack.agents.intents import QueryAnalysis, classify_query
 from serpapi_haystack.agents.llm_router import LLMKeyMissing
 from serpapi_haystack.agents.llm_router import run_agent as run_llm_agent
 from serpapi_haystack.agents.universal import build_plan, synthesis_input
+from serpapi_haystack.utils.presentation import (
+    apply_funnel,
+    attach_evidence,
+    build_route,
+    completeness,
+    confidence_with_reasons,
+    refinements_for,
+    record_usage,
+    usage_snapshot,
+    why_for,
+)
 from serpapi_haystack.toolsets import (
     TOOL_FACTORIES,
     academic_toolset,
@@ -141,6 +152,8 @@ class ChatRequest(BaseModel):
     deep_research: bool = Field(False)
     conversation_id: str | None = Field(None, max_length=64)
     num_results: int = Field(10, ge=1, le=10)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    context: list[str] = Field(default_factory=list)
 
 
 class AgentRequest(BaseModel):
@@ -149,6 +162,7 @@ class AgentRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500)
     conversation_id: str | None = Field(None, max_length=64)
     num_results: int = Field(8, ge=1, le=10)
+    filters: dict[str, Any] = Field(default_factory=dict)
 
 
 DOMAIN_MODES: dict[str, dict[str, Any]] = {
@@ -272,7 +286,14 @@ def analyze_intent(req: IntentRequest, request: Request) -> dict[str, Any]:
     q = sanitize_query(req.query)
     analysis = classify_query(q)
     plan = [{"id": s.id, "action": s.action, "tool": s.tool, "query": s.query} for s in build_plan(analysis, q)]
-    return {"analysis": analysis.to_dict(), "plan": plan}
+    estimated_calls = max(1, len(analysis.tools))
+    return {
+        "analysis": analysis.to_dict(),
+        "plan": plan,
+        "estimated_calls": estimated_calls,
+        "estimated_seconds": estimated_calls * 4,
+        "requires_confirmation": estimated_calls >= 5,
+    }
 
 
 @app.post("/api/search")
@@ -295,8 +316,89 @@ def execute_search(req: SearchRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Search failed: {str(exc)[:200]}")
 
 
-def _run_chat(query: str, mode: str, deep: bool, num_results: int) -> dict[str, Any]:
+def _enrich_outputs(
+    tool_outputs: list[dict[str, Any]],
+    tool_names: list[str],
+    trace: RunTrace,
+    constraints: dict[str, Any],
+    budget: BudgetLimits,
+    started: float,
+) -> dict[str, Any]:
+    """Shared enrichment: funnel, why, route, confidence, completeness, links."""
+    import time as _time
+
+    flat = []
+    for out in tool_outputs:
+        for r in (out.get("results", []) or []):
+            r["_engine"] = out.get("engine", "")
+            flat.append(r)
+    funnel = apply_funnel(flat, constraints or {})
+    matched = funnel["matched_results"]
+    for i, r in enumerate(matched):
+        r["why"] = why_for(r, constraints or {}, i, len(matched))
+    evidence = [e for out in tool_outputs for e in (out.get("evidence", []) or [])]
+    linked_results, linked_evidence = attach_evidence(matched[:30], evidence[:30])
+    sources = [
+        {
+            "id": e.get("id", ""),
+            "title": (e.get("source_title") or "")[:200],
+            "url": e.get("source_url") or "",
+            "domain": e.get("domain", ""),
+            "type": e.get("source_type") or "",
+            "claim": (e.get("extracted_claim") or "")[:300],
+            "claim_type": str(e.get("kind", "FACT")).lower(),
+            "tool": e.get("tool_used") or "",
+            "date": e.get("timestamp"),
+        }
+        for e in linked_evidence
+    ]
+    summary = trace.summary()
+    errors = len(summary["errors"])
+    route = build_route(tool_names, trace.calls)
+    ok_lines = [line for line in route if line["status"] == "ok"]
+    failed = sum(1 for line in route if line["status"] == "failed")
+    succeeded = sum(1 for line in route if line["status"] in ("ok", "empty"))
+    elapsed = _time.monotonic() - started
+    return {
+        "results": linked_results,
+        "results_count": len(matched),
+        "evidence": linked_evidence,
+        "evidence_count": len(linked_evidence),
+        "sources": sources,
+        "route": route,
+        "funnel": {
+            "discovered": funnel["discovered"],
+            "matched": funnel["matched"],
+            "set_aside": funnel["set_aside"],
+            "reasons": funnel["reasons"],
+            "set_aside_results": funnel["set_aside_results"],
+        },
+        "confidence": confidence_with_reasons(len(matched), errors, len(ok_lines), constraints or {}),
+        "completeness": completeness(len(route), succeeded, failed),
+        "budget": {
+            "calls_used": summary["serpapi_calls"],
+            "calls_limit": budget.max_serpapi_calls,
+            "seconds_used": round(elapsed, 1),
+            "seconds_limit": budget.max_execution_time_seconds,
+        },
+        "errors": errors,
+    }
+
+
+def _run_chat(
+    query: str,
+    mode: str,
+    deep: bool,
+    num_results: int,
+    filters: dict[str, Any] | None = None,
+    context: list[str] | None = None,
+) -> dict[str, Any]:
+    import time as _time
+
+    started = _time.monotonic()
     analysis = classify_query(query)
+    constraints = {**(analysis.constraints or {}), **(filters or {})}
+    analysis.constraints = constraints
     if mode != "auto":
         # Constrain tools to the explicit domain mode (power-user override).
         wanted = DOMAIN_MODES[mode]["tools"]
@@ -311,37 +413,32 @@ def _run_chat(query: str, mode: str, deep: bool, num_results: int) -> dict[str, 
     if not deep:
         # Normal mode: 3-5 tool calls. Deep: up to budget.
         toolset.tools = toolset.tools[:5]  # type: ignore[attr-defined]
+    tool_names = [t.name for t in toolset.tools]
     tool_outputs, trace = execute_tools(toolset, query, num_results, budget)
     trace.intent = analysis.intent
-    trace.tools_selected = [t.name for t in toolset.tools]
-    synth = synthesis_input(query, analysis, tool_outputs)
-    errors = len(trace.summary()["errors"])
-    sources = [
-        {
-            "title": (e.get("source_title") or "")[:200],
-            "url": e.get("source_url") or "",
-            "type": e.get("source_type") or "",
-            "claim": (e.get("extracted_claim") or "")[:300],
-            "tool": e.get("tool_used") or "",
-        }
-        for e in synth["evidence"][:30]
-    ]
+    trace.tools_selected = tool_names
+    enriched = _enrich_outputs(tool_outputs, tool_names, trace, constraints, budget, started)
+    use_case = (analysis.intent or ["GENERAL_RESEARCH"])[0].lower()
+    record_usage(
+        queries=1,
+        calls=enriched["budget"]["calls_used"],
+        failed=enriched["errors"],
+        tools=tool_names,
+    )
     return {
         "query": query,
         "mode": mode,
         "deep_research": deep,
         "analysis": analysis.to_dict(),
         "plan": [{"id": s.id, "action": s.action, "tool": s.tool, "query": s.query} for s in plan],
-        "tools_executed": [t.name for t in toolset.tools],
-        "results_count": len(synth["results"]),
-        "evidence_count": len(synth["evidence"]),
-        "evidence": synth["evidence"],
-        "results": synth["results"][:30],
-        "sources": sources,
-        "confidence": _confidence(len(synth["results"]), errors),
+        "tools_executed": tool_names,
+        "constraints": constraints,
+        "context": context or [],
+        **enriched,
+        "refinements": refinements_for(use_case),
         "research_trace": trace.summary(),
         "answer": "",
-        "summary": f"Found {len(synth['results'])} results across {len(toolset.tools)} sources.",
+        "summary": f"Found {enriched['results_count']} results across {len(tool_names)} sources.",
     }
 
 
@@ -349,7 +446,28 @@ def _run_chat(query: str, mode: str, deep: bool, num_results: int) -> dict[str, 
 def chat_agent(req: ChatRequest, request: Request) -> dict[str, Any]:
     _check_rate(request, "chat")
     q = sanitize_query(req.query)
-    return _run_chat(q, req.mode, req.deep_research, req.num_results)
+    filters = {k: v for k, v in (req.filters or {}).items() if str(v).strip() != ""}
+    return _run_chat(q, req.mode, req.deep_research, req.num_results, filters, req.context)
+
+
+@app.get("/api/config")
+def get_config() -> dict[str, Any]:
+    limits = BudgetLimits()
+    return {
+        "limits": {
+            "max_planning_steps": limits.max_planning_steps,
+            "max_serpapi_calls": limits.max_serpapi_calls,
+            "max_results_per_call": limits.max_results_per_call,
+            "max_execution_time_seconds": limits.max_execution_time_seconds,
+        },
+        "modes": list(DOMAIN_MODES.keys()),
+        "features": {"agent": True, "streaming": True, "compare": True, "saved_local": True},
+    }
+
+
+@app.get("/api/usage")
+def get_usage() -> dict[str, Any]:
+    return usage_snapshot()
 
 
 @app.post("/api/agent")
@@ -362,7 +480,9 @@ def agent_run(req: AgentRequest, request: Request) -> dict[str, Any]:
     _check_rate(request, "chat")
     q = sanitize_query(req.query)
     try:
-        return run_llm_agent(q, num_results=req.num_results)
+        out = run_llm_agent(q, num_results=req.num_results, constraints=req.filters or {})
+        record_usage(queries=1)
+        return out
     except LLMKeyMissing as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -398,7 +518,7 @@ def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
         final = {
             "results": synth["results"][:30],
             "evidence": synth["evidence"][:30],
-            "confidence": _confidence(len(synth["results"]), 0),
+            "confidence": confidence_with_reasons(len(synth["results"]), 0, len(toolset.tools), {}),
             "trace": trace.summary(),
         }
         yield f"event: answer_complete\ndata: {json.dumps(final)[:8000]}\n\n"

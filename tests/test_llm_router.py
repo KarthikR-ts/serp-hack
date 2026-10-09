@@ -186,7 +186,7 @@ def test_agent_endpoint_ok(monkeypatch):
     monkeypatch.setattr(
         server,
         "run_llm_agent",
-        lambda q, num_results=8: {"status": "ok", "query": q, "presentation": {"type": "generic", "results": []}},
+        lambda q, num_results=8, **kw: {"status": "ok", "query": q, "presentation": {"type": "generic", "results": []}},
     )
     r = client.post("/api/agent", json={"query": "buy headphones"})
     assert r.status_code == 200

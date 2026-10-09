@@ -1,83 +1,91 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Ask in plain language. The agent chooses where to research and shows its work.">
 <title>Serp Intelligence — Universal Web Intelligence</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<a class="skip" href="#main">Skip to results</a>
+<a class="skip" href="#answer">Skip to answer</a>
+<a class="skip" href="#composer">Skip to composer</a>
+<a class="skip" href="#sources">Skip to sources</a>
 <header class="top"><div class="top-inner">
-<div class="brand">Serp Intelligence<small>You ask. Agent chooses how to research it.</small></div>
+<div class="brand">Serp Intelligence<small>You ask. The agent chooses how to research it.</small></div>
+<div class="top-actions">
+<button class="btn" id="marginBtn" type="button" aria-expanded="false">Sources (<span id="srcCountTop">0</span>)</button>
+<button class="btn" id="themeBtn" type="button">Theme: system</button>
+</div>
 </div></header>
 <div class="layout">
-<aside class="side" aria-label="Library">
+<nav class="rail" aria-label="Library">
+<div>
+<h2>Research</h2>
+<div class="btn-row" style="margin-top:0"><button class="btn btn-primary" id="newBtn" type="button">New research</button></div>
 <h2>Conversations</h2>
 <div id="convs"></div>
 <h2>Saved research</h2>
 <div id="saved"></div>
+<p class="meta">Saved on this device only.</p>
 <button class="btn" id="clearSaved" type="button">Clear saved</button>
-<h2>API</h2>
-<p style="font-size:13px;color:var(--color-muted-fg)">Backend: <code id="apiBase">same origin</code></p>
-</aside>
+<h2>Operator</h2>
+<details id="usageBox"><summary>Usage</summary><div id="usage" class="meta">Loading…</div></details>
+<p class="meta" id="apiBase">Backend: same origin</p>
+</div>
+</nav>
 <main class="main" id="main">
 <section class="hero" id="hero" aria-label="Ask">
-<h1>Evidence first. Answer second.</h1>
-<p>One question in. Agent picks the right search verticals, shows its trace, cites sources. Jobs, shopping, papers, travel, finance, news, local.</p>
-<div class="searchrow">
-<label class="visually-hidden" for="q">Ask anything</label>
-<input id="q" type="text" placeholder="Find software engineering internships…" autocomplete="off" maxlength="500">
-<button class="btn btn-primary" id="go" type="button"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="2"/><line x1="14" y1="14" x2="18" y2="18" stroke="currentColor" stroke-width="2"/></svg> Research</button>
-<button class="btn btn-primary" id="agentGo" type="button">Agent (LLM)</button>
-</div>
-<div class="btn-row" aria-label="Shortcuts">
-<button class="chip" data-q="Research the current state of AI coding agents" type="button">Research</button>
-<button class="chip" data-q="Find best OLED monitor under $500 with reviews" type="button">Shopping</button>
-<button class="chip" data-q="Teach me CRISPR gene editing from beginner to papers" type="button">Learn</button>
-<button class="chip" data-q="Find software engineering internships" type="button">Jobs</button>
-<button class="chip" data-q="Plan a 4-day trip to Tokyo under budget" type="button">Travel</button>
-</div>
-<fieldset class="modes" aria-label="Mode">
-<legend class="visually-hidden">Mode</legend>
+<h1>What do you want to find out?</h1>
+<p class="lede" id="firstHelp">Ask in your own words. The assistant chooses where to look.</p>
+<div class="composer" id="composer">
+<label class="visually-hidden" for="q">Your question</label>
+<textarea id="q" rows="2" maxlength="500" aria-label="Your question" placeholder="Describe what you want to find, decide or learn"></textarea>
+<div class="composer-row" role="toolbar" aria-label="Research options">
+<div class="mode-pills" role="radiogroup" aria-label="Mode">
 <label><input type="radio" name="mode" value="auto" checked> Auto</label>
 <label><input type="radio" name="mode" value="research"> Research</label>
 <label><input type="radio" name="mode" value="shopping"> Shopping</label>
 <label><input type="radio" name="mode" value="jobs"> Jobs</label>
 <label><input type="radio" name="mode" value="learning"> Learning</label>
 <label><input type="radio" name="mode" value="travel"> Travel</label>
-<label><input type="checkbox" id="deep"> Deep research</label>
-</fieldset>
-<div class="filters" id="f-research"><label class="visually-hidden" for="ff-date">Date</label><input id="ff-date" data-f="date" placeholder="Date (e.g. past month)"><label class="visually-hidden" for="ff-domain">Domain</label><input id="ff-domain" data-f="domain" placeholder="Domain"><label class="visually-hidden" for="ff-acad">Academic only</label><select id="ff-acad" data-f="academic"><option value="">Academic?</option><option value="yes">Academic only</option></select></div>
-<div class="filters" id="f-shopping"><label class="visually-hidden" for="ff-budget">Max budget</label><input id="ff-budget" data-f="budget" placeholder="Max budget"><label class="visually-hidden" for="ff-brand">Brand</label><input id="ff-brand" data-f="brand" placeholder="Brand"><label class="visually-hidden" for="ff-rating">Min rating</label><input id="ff-rating" data-f="min_rating" placeholder="Min rating"></div>
-<div class="filters" id="f-jobs"><label class="visually-hidden" for="ff-role">Role</label><input id="ff-role" data-f="role" placeholder="Role"><label class="visually-hidden" for="ff-loc">Location</label><input id="ff-loc" data-f="location" placeholder="Location"><label class="visually-hidden" for="ff-remote">Remote</label><select id="ff-remote" data-f="remote"><option value="">Onsite/Remote?</option><option>Remote</option><option>Onsite</option></select></div>
-<div class="filters" id="f-learning"><label class="visually-hidden" for="ff-level">Level</label><select id="ff-level" data-f="level"><option value="">Level</option><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select><label class="visually-hidden" for="ff-cost">Cost</label><select id="ff-cost" data-f="free"><option value="">Cost</option><option>Free only</option></select></div>
-<div class="filters" id="f-travel"><label class="visually-hidden" for="ff-origin">Origin</label><input id="ff-origin" data-f="origin" placeholder="Origin"><label class="visually-hidden" for="ff-dest">Destination</label><input id="ff-dest" data-f="destination" placeholder="Destination"><label class="visually-hidden" for="ff-dates">Dates</label><input id="ff-dates" data-f="dates" placeholder="Dates"><label class="visually-hidden" for="ff-tbudget">Budget</label><input id="ff-tbudget" data-f="budget" placeholder="Budget"></div>
-<div class="btn-row">
-<button class="btn" id="planBtn" type="button">Show plan first</button>
-<button class="btn" id="saveBtn" type="button">Save result</button>
-<button class="btn" id="compareBtn" type="button">Compare selected</button>
 </div>
-<div class="btn-row" aria-label="Search again">
-<button class="btn" data-again="wider" type="button">Search wider</button>
-<button class="btn" data-again="recent" type="button">Recent only</button>
-<button class="btn" data-again="cheaper" type="button">Cheaper</button>
-<button class="btn" data-again="academic" type="button">Academic</button>
+<label class="deep-toggle"><input type="checkbox" id="deep" aria-label="Deep research"> Deep research <span class="meta" id="deepEst"></span></label>
+<button class="btn btn-primary" id="go" type="button">Research</button>
+<button class="btn btn-primary" id="agentGo" type="button">Agent (LLM)</button>
+<button class="btn" id="stopBtn" type="button" hidden>Stop</button>
 </div>
+<div class="filters" id="filterRow" style="display:none" aria-label="Understood filters"></div>
+</div>
+<div class="btn-row" aria-label="Start from a goal" id="goals">
+<button type="button" data-t="Compare products: ___ vs ___">Compare products</button>
+<button type="button" data-t="Find roles or internships in ___">Find roles or internships</button>
+<button type="button" data-t="Research ___">Research a topic</button>
+<button type="button" data-t="Build a learning plan for ___">Build a learning plan</button>
+<button type="button" data-t="Plan a trip to ___">Plan a trip</button>
+<button type="button" data-t="What changed in ___ recently?">Check what's changed</button>
+</div>
+<div class="recent" id="recent" aria-label="Recent"></div>
 </section>
-<section id="status" aria-live="polite"></section>
-<details class="trace" id="traceWrap"><summary>Research process</summary><div class="trace-body" id="trace"></div></details>
-<section id="learn" class="trace" style="display:none"><div class="trace-body learn" id="learnBody"></div></section>
-<div class="cards" id="cards"></div>
+<div id="planSlot"></div>
+<div id="status" role="status" aria-live="polite"></div>
+<div class="sr-status" id="srStatus" role="status"></div>
+<div id="answer" aria-label="Answer"></div>
+<div id="cards"></div>
 <div id="cmpWrap"></div>
-<section class="sources" aria-label="Sources"><h2>Sources (<span id="srcCount">0</span>)</h2><ol id="sources"></ol></section>
 </main>
+<aside class="margin" id="margin" aria-label="Sources and evidence">
+<h2>Sources (<span id="srcCount">0</span>)</h2>
+<ol class="src-list" id="sources"></ol>
+</aside>
 </div>
 <div class="toast" id="toast" role="status"></div>
-<script src="vendor/gsap.min.js"></script>
+<footer class="app-foot">
+<p>This assistant reads and compares. It doesn't buy, apply or book for you. Results are live web data: check important claims at the source. Anonymous use: conversations stay in this browser unless you save them.</p>
+</footer>
 <script src="app.js"></script>
 </body>
 </html>
