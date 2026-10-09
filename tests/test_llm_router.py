@@ -240,3 +240,48 @@ def test_model_default_when_unset(monkeypatch):
 
     monkeypatch.delenv("LLM_MODEL", raising=False)
     assert router.resolve_model() == router.DEFAULT_MODEL
+
+
+def test_hard_rules_override_weak_llm_plan():
+    bad = {
+        "use_case": "research",
+        "steps": [{"engine": "google_search", "query": "best wireless keyboard under $100"}],
+        "presentation": "research_brief",
+        "needs_clarification": False,
+        "clarifying_question": "",
+        "confidence": "high",
+        "reasoning": "weak model missed buy intent",
+    }
+    plan = classify_with_llm("best wireless keyboard under $100", complete=lambda s, u: bad)
+    assert plan.steps[0].engine == "google_shopping"
+    assert plan.use_case == "shopping"
+    assert plan.presentation == "shopping_top2"
+
+
+def test_hard_rules_leave_good_plan_alone():
+    good = {
+        "use_case": "shopping",
+        "steps": [{"engine": "google_shopping", "query": "headphones"}],
+        "presentation": "shopping_top2",
+        "needs_clarification": False,
+        "clarifying_question": "",
+        "confidence": "high",
+        "reasoning": "ok",
+    }
+    plan = classify_with_llm("buy headphones", complete=lambda s, u: good)
+    assert [s.engine for s in plan.steps] == ["google_shopping"]
+
+
+def test_hard_rules_video_learning():
+    bad = {
+        "use_case": "research",
+        "steps": [{"engine": "google_search", "query": "diffusion models"}],
+        "presentation": "research_brief",
+        "needs_clarification": False,
+        "clarifying_question": "",
+        "confidence": "high",
+        "reasoning": "weak model missed video intent",
+    }
+    plan = classify_with_llm("teach me diffusion models with video tutorials", complete=lambda s, u: bad)
+    assert plan.steps[0].engine == "youtube"
+    assert plan.presentation == "youtube_path"

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Literal
@@ -29,7 +30,7 @@ try:
 except ImportError:
     pass
 
-from .intents import QueryAnalysis, classify_query
+from .intents import QueryAnalysis, _BUDGET_RE, _LEARN_RE, _SHOP_RE, classify_query
 from ..toolsets import TOOL_FACTORIES
 from ..utils.limits import BudgetLimits, BudgetTracker
 from ..utils.observability import RunTrace, ToolCallRecord
@@ -202,6 +203,37 @@ OUTPUT CONTRACT:
 """
 
 
+_VIDEO_LEARN_RE = re.compile(r"\b(video|videos|tutorial|tutorials|talk|course videos|youtube)\b", re.I)
+
+
+def _enforce_hard_rules(query: str, plan: RouterPlan) -> RouterPlan:
+    """Deterministic safety net over the LLM plan.
+
+    Small models ignore prompt rules; these Buy/video-learning overrides use
+    the same keyword signals as the legacy classifier and only fire when the
+    LLM missed the obvious engine. Never duplicates an engine already planned.
+    """
+    if plan.needs_clarification:
+        return plan
+    q = query or ""
+    engines = [s.engine for s in plan.steps]
+    buy_signal = bool(_SHOP_RE.search(q) or _BUDGET_RE.search(q) or "$" in q or "₹" in q)
+    if buy_signal and "google_shopping" not in engines:
+        plan.steps.insert(0, RouterStep(engine="google_shopping", query=q.strip()[:300] or q))
+        if plan.use_case == "research":
+            plan.use_case = "shopping"
+        plan.presentation = "shopping_top2"
+        plan.reasoning = (plan.reasoning + " [rule: buy-intent -> shopping]").strip()
+    video_signal = bool(_LEARN_RE.search(q) and _VIDEO_LEARN_RE.search(q))
+    if video_signal and "youtube" not in engines:
+        plan.steps.insert(0, RouterStep(engine="youtube", query=q.strip()[:300] or q))
+        if plan.use_case == "research":
+            plan.use_case = "youtube_learning"
+        plan.presentation = "youtube_path"
+        plan.reasoning = (plan.reasoning + " [rule: video-learning -> youtube]").strip()
+    return plan
+
+
 def classify_with_llm(query: str, complete: CompleteFn | None = None) -> RouterPlan:
     """PASS 1: LLM classifies the request into exact endpoint steps."""
     complete = complete or openrouter_complete
@@ -215,7 +247,7 @@ def classify_with_llm(query: str, complete: CompleteFn | None = None) -> RouterP
     if not parsed:
         plan.steps = [RouterStep(engine="google_search", query=query)]
         plan.reasoning = "Classifier fallback: broad web search."
-        return plan
+        return _enforce_hard_rules(query, plan)
     plan.use_case = str(parsed.get("use_case", "research"))[:60] or "research"
     if parsed.get("presentation") in PRESENTATIONS:
         plan.presentation = parsed["presentation"]
@@ -241,7 +273,7 @@ def classify_with_llm(query: str, complete: CompleteFn | None = None) -> RouterP
     if parsed.get("confidence") in ("high", "medium", "low"):
         plan.confidence = parsed["confidence"]
     plan.reasoning = str(parsed.get("reasoning", ""))[:300]
-    return plan
+    return _enforce_hard_rules(query, plan)
 
 
 def execute_plan(plan: RouterPlan, budget: BudgetLimits | None = None) -> tuple[list[dict[str, Any]], RunTrace]:
