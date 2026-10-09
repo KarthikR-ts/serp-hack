@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@theme {
+  --font-ui: "Schibsted Grotesk", ui-sans-serif, system-ui, "Noto Sans", "Noto Sans Devanagari", "Noto Sans Kannada", sans-serif;
+  --font-read: "Literata", Georgia, "Noto Serif", "Noto Serif Devanagari", "Noto Serif Kannada", serif;
+}
+
+:root {
+  --bg: #F2F5F7; --surface: #FFFFFF;
+  --ink: #17304F; --ink-2: #4A5C70; --ink-3: #5F7184;
+  --rule: #C9D3DD; --control: #74869B; --mark: #FBE9A6;
+  --fam-web: #0B64B0; --fam-research: #8A3FA0; --fam-live: #C2410C;
+  --fam-career: #0B7A56; --fam-commerce: #9A6200; --fam-place: #0E7490;
+  --error: #B42318; --caution: #8A5A00; --success: #0B6B47;
+  --focus: #17304F;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --shadow-overlay: 0 8px 24px rgba(23, 48, 79, 0.16);
+}
+:root[data-theme="dark"] {
+  --bg: #0E1A2A; --surface: #15263B;
+  --ink: #E6EDF4; --ink-2: #A5B5C6; --ink-3: #8CA0B5;
+  --rule: #2A3E56; --control: #6A839F; --mark: #4A3F12;
+  --fam-web: #5BA8F0; --fam-research: #C58BDB; --fam-live: #FB8F5E;
+  --fam-career: #4FC79B; --fam-commerce: #E0A83A; --fam-place: #4FBCD6;
+  --error: #FF8A80; --caution: #F2C14E; --success: #5FD3A5;
+  --focus: #7FB8F5;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1A2A; --surface: #15263B;
+    --ink: #E6EDF4; --ink-2: #A5B5C6; --ink-3: #8CA0B5;
+    --rule: #2A3E56; --control: #6A839F; --mark: #4A3F12;
+    --fam-web: #5BA8F0; --fam-research: #C58BDB; --fam-live: #FB8F5E;
+    --fam-career: #4FC79B; --fam-commerce: #E0A83A; --fam-place: #4FBCD6;
+    --error: #FF8A80; --caution: #F2C14E; --success: #5FD3A5;
+    --focus: #7FB8F5;
+    --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+html { scroll-padding-top: 76px; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--mark); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+
+/* ---------- surfaces & controls (shadcn-crisp anatomy, brand tokens) ---------- */
+.surface { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 10px 18px; border-radius: 8px;
+  border: 1px solid var(--control); background: var(--surface); color: var(--ink);
+  font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap;
+  transition: transform 160ms var(--ease-out), filter 160ms var(--ease-out);
+}
+.btn:hover { filter: brightness(0.96); }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.btn-primary .btn-dot { transition: transform 160ms var(--ease-out); }
+.btn-primary:hover .btn-dot { transform: translateX(2px); }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink);
+  border-radius: 999px; padding: 8px 14px; min-height: 44px;
+  font-size: 13px; cursor: pointer;
+  transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out);
+}
+.chip:hover { border-color: var(--control); }
+.chip:active { transform: scale(0.97); }
+.mode-pill input { accent-color: var(--ink); }
+.mode-pill:has(input:checked) { border-color: var(--ink); background: var(--mark); font-weight: 600; }
+
+/* ---------- reveal on scroll (stagger, transform+opacity only) ---------- */
+.reveal { opacity: 0; transform: translateY(14px); }
+.reveal.in {
+  opacity: 1; transform: none;
+  transition: opacity 500ms var(--ease-out), transform 500ms var(--ease-out);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* ---------- route ---------- */
+.route-line-g { cursor: pointer; }
+.route-line-g.dim { opacity: 0.22; transition: opacity 200ms var(--ease-out); }
+.route-line-g { transition: opacity 200ms var(--ease-out); }
+.route-draw { stroke-dasharray: 600; stroke-dashoffset: 600; animation: routedraw 900ms var(--ease-out) forwards; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes routedraw { to { stroke-dashoffset: 0; } }
+.route-merge { animation: mergepulse 600ms var(--ease-out); transform-box: fill-box; transform-origin: center; }
+@keyframes mergepulse { from { transform: scale(0.85); opacity: 0.3; } to { transform: scale(1); opacity: 1; } }
+
+/* ---------- spotlight tiles (React-Bits cue, CSS-only) ---------- */
+.spot { position: relative; overflow: hidden; }
+.spot::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+  background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--spot, var(--fam-commerce)) 14%, transparent), transparent 70%);
+  transition: opacity 250ms var(--ease-out);
+}
+.spot:hover::before { opacity: 1; }
+
+/* ---------- skeletons ---------- */
+.skel { display: block; height: 14px; border-radius: 4px; background: var(--rule); opacity: 0.55; margin: 8px 0; overflow: hidden; position: relative; }
+.skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 70%, transparent), transparent); animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+/* ---------- misc ---------- */
+.flash { background: var(--mark); border-radius: 4px; transition: background 200ms var(--ease-out); }
+.toast-show { opacity: 1 !important; transform: translate(-50%, 0) !important; }
+.claim-fact { text-decoration: underline solid color-mix(in srgb, var(--control) 50%, transparent); text-underline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  .reveal { opacity: 1; transform: none; }
+  .route-draw { stroke-dashoffset: 0; }
+}

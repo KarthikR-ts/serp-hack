@@ -46,13 +46,16 @@ python -m pytest
 # Run FastAPI Server
 uvicorn serpapi_haystack.server:app --reload
 
+# Run Next.js frontend (new premium UI, port 3000, proxies to :8000)
+cd apps/web && npm install && npm run dev
+
 # Run Examples
 python examples/phase4_media_academic.py
 python examples/phase5_travel_finance_local.py
 python examples/phase6_universal_app.py
 ```
 
-Open http://127.0.0.1:8000 — **Research** uses the instant regex router, **Agent (LLM)** runs classify → exact endpoints → ranked picks (shopping top-2 with clickable images, YouTube learning paths, finance snapshots, deep-dive reports, travel choices ready to book — booking itself is out of scope).
+Open http://localhost:3000 — **Research** uses the instant regex router, **Agent (LLM)** runs classify → exact endpoints → ranked picks (shopping top-2 with clickable images, YouTube learning paths, finance snapshots, deep-dive reports, travel choices ready to book — booking itself is out of scope). The legacy static UI is still served by FastAPI at http://127.0.0.1:8000 for reference.
 
 ## Compatibility: Upstream Integration & Standalone Package
 
