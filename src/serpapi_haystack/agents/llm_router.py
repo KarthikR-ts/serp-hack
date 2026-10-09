@@ -22,6 +22,13 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Literal
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
 from .intents import QueryAnalysis, classify_query
 from ..toolsets import TOOL_FACTORIES
 from ..utils.limits import BudgetLimits, BudgetTracker
