@@ -198,3 +198,29 @@ def test_resolve_llm_key_missing(monkeypatch):
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     with pytest.raises(LLMKeyMissing):
         resolve_llm_key()
+
+
+def test_model_selection_via_env(monkeypatch):
+    import serpapi_haystack.agents.llm_router as router
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    monkeypatch.setenv("LLM_MODEL", "google/gemini-2.0-flash-001")
+    assert router.resolve_model() == "google/gemini-2.0-flash-001"
+    monkeypatch.setattr(
+        router,
+        "execute_plan",
+        lambda plan, budget=None: ([{"engine": "google_search", "results": [], "evidence": []}], router.RunTrace()),
+    )
+    out = router.run_agent(
+        "test query",
+        complete=lambda s, u: {"use_case": "research", "steps": [], "presentation": "research_brief"},
+    )
+    assert out["status"] == "ok"
+    assert out["model"] == "google/gemini-2.0-flash-001"
+
+
+def test_model_default_when_unset(monkeypatch):
+    import serpapi_haystack.agents.llm_router as router
+
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    assert router.resolve_model() == router.DEFAULT_MODEL

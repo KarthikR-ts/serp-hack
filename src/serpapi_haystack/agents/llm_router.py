@@ -442,6 +442,7 @@ def run_agent(query: str, complete: CompleteFn | None = None, num_results: int =
     return {
         "status": "ok",
         "query": query,
+        "model": resolve_model(),
         "classification": plan.to_dict(),
         "legacy_intents": legacy.intent,
         "presentation": presentation,
