@@ -200,6 +200,22 @@ def test_resolve_llm_key_missing(monkeypatch):
         resolve_llm_key()
 
 
+def test_classifier_prompt_has_strict_guardrails():
+    seen = {}
+
+    def cap(system, user):
+        seen["system"] = system
+        return {}
+
+    classify_with_llm("best wireless keyboard under $100", complete=cap)
+    sys_prompt = seen["system"]
+    assert "BUY INTENT always means shopping" in sys_prompt
+    assert "Never label buy-intent queries" in sys_prompt
+    assert "FEW-SHOT" in sys_prompt
+    assert "google_shopping" in sys_prompt
+    assert "youtube" in sys_prompt
+
+
 def test_model_selection_via_env(monkeypatch):
     import serpapi_haystack.agents.llm_router as router
 

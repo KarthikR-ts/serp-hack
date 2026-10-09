@@ -159,7 +159,34 @@ Given a user request, decide EXACTLY which search engines to call.
 Allowed engines and when to use them:
 {registry}
 
-Rules:
+HARD RULES (follow in order):
+1. BUY INTENT always means shopping. If the query contains a buy verb
+   (buy, find, get, best, top, cheapest, affordable, order) AND a product noun
+   (keyboard, laptop, phone, monitor, headphones, camera, shoes, etc.),
+   OR any price/budget/currency signal ($, Rs, USD, under, below, budget),
+   then use_case MUST be "shopping", the FIRST step MUST use engine
+   "google_shopping", and presentation MUST be "shopping_top2".
+   Never label buy-intent queries as "research".
+2. VIDEO LEARNING means youtube. "learn X", "tutorial", "course videos",
+   "explain X on video" -> FIRST step engine "youtube", presentation "youtube_path".
+3. Prefer the specialized engine over google_search whenever one fits
+   (jobs->google_jobs, stocks->google_finance, flights/hotels->travel engines,
+   papers->google_scholar, places->google_maps). google_search alone is only
+   for generic factual lookup with no specialized fit.
+4. Deep/complex research ("deep dive", "thorough", "comprehensive", multi-part
+   questions): steps google_search + google_scholar + google_news, presentation deep_dive.
+
+FEW-SHOT EXAMPLES:
+- "best wireless keyboard under $100" ->
+  {{"use_case": "shopping", "steps": [{{"engine": "google_shopping", "query": "wireless keyboard under $100", "num_results": 8}}], "presentation": "shopping_top2"}}
+- "teach me diffusion models with videos" ->
+  {{"use_case": "youtube_learning", "steps": [{{"engine": "youtube", "query": "diffusion models tutorial beginners", "num_results": 8}}], "presentation": "youtube_path"}}
+- "plan a trip" (no origin/destination) ->
+  {{"use_case": "travel", "steps": [], "presentation": "travel_choices", "needs_clarification": true, "clarifying_question": "Where are you flying from, and where to?"}}
+- "NVDA stock price today" ->
+  {{"use_case": "finance", "steps": [{{"engine": "google_finance", "query": "NVDA", "num_results": 5}}, {{"engine": "google_news", "query": "Nvidia stock news", "num_results": 5}}], "presentation": "finance_snapshot"}}
+
+OUTPUT CONTRACT:
 - Reply with JSON only, matching this schema:
   {{"use_case": "<short label like shopping|youtube_learning|deep_dive|finance|jobs|travel|research|news|local|events|trends|patents|academic>",
    "steps": [{{"engine": "<one of allowed>", "query": "<rewritten search query>", "num_results": <1-10>, "location": "<city/country or null>"}}],
@@ -170,8 +197,6 @@ Rules:
    "reasoning": "<one sentence>"}}
 - Use at most 3 steps. First step is the primary engine.
 - Rewrite queries for search (keywords, not full sentences). YouTube queries should target tutorials/explainers.
-- Deep/complex research ("deep dive", "thorough", "comprehensive", multi-part questions): steps google_search + google_scholar + google_news, presentation deep_dive.
-- Video learning ("learn X via video", "tutorial", "course videos"): youtube first, presentation youtube_path.
 - Set needs_clarification=true ONLY when a required choice is missing: travel without origin/destination, jobs without any role, or a query under 3 meaningful words. Otherwise false.
 - Never invent engines or parameters. Location only when the user implies a place.
 """
