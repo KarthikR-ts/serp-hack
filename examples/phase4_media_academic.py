@@ -23,7 +23,7 @@ def main():
 
     print("\n--- Phase 4: Google Scholar ---")
     scholar_comp = SerpApiGoogleScholar()
-    scholar_res = scholar_comp.run("diffusion model distillation", num_results=2)
+    scholar_res = scholar_comp.run("CRISPR gene editing off-target effects", num_results=2)
     print(f"Scholar Results ({len(scholar_res['results'])}):")
     for r in scholar_res['results']:
         print(f" - {r.get('title')} | Authors: {r.get('authors')}")

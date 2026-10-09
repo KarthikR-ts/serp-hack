@@ -95,7 +95,7 @@ _FINANCE_RE = re.compile(r"\b(stock|stocks|ticker|finance|market|shares|nasdaq|n
 _TREND_RE = re.compile(r"\b(trend|trends|trending|popularity|interest over time|rising query)\b", re.I)
 _EVENT_RE = re.compile(r"\b(event|events|concert|conference|meetup|festival|ticket|tickets|venue)\b", re.I)
 _TECH_RE = re.compile(
-    r"\b(python|kubernetes|docker|transformer|diffusion|rag|framework|api|programming|machine learning)\b", re.I
+    r"\b(python|kubernetes|docker|transformer|crispr|gene editing|rag|framework|api|programming|machine learning)\b", re.I
 )
 
 

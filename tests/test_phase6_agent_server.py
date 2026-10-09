@@ -23,7 +23,7 @@ client = TestClient(app)
 
 
 def test_intent_classification_rules():
-    res1 = classify_query("Find recent papers on diffusion model distillation")
+    res1 = classify_query("Find recent papers on CRISPR gene editing")
     assert "ACADEMIC_RESEARCH" in res1.intent
     assert "google_scholar" in res1.tools
 

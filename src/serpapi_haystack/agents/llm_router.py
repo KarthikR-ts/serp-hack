@@ -180,8 +180,8 @@ HARD RULES (follow in order):
 FEW-SHOT EXAMPLES:
 - "best wireless keyboard under $100" ->
   {{"use_case": "shopping", "steps": [{{"engine": "google_shopping", "query": "wireless keyboard under $100", "num_results": 8}}], "presentation": "shopping_top2"}}
-- "teach me diffusion models with videos" ->
-  {{"use_case": "youtube_learning", "steps": [{{"engine": "youtube", "query": "diffusion models tutorial beginners", "num_results": 8}}], "presentation": "youtube_path"}}
+- "teach me crispr with videos" ->
+  {{"use_case": "youtube_learning", "steps": [{{"engine": "youtube", "query": "crispr gene editing tutorial beginners", "num_results": 8}}], "presentation": "youtube_path"}}
 - "plan a trip" (no origin/destination) ->
   {{"use_case": "travel", "steps": [], "presentation": "travel_choices", "needs_clarification": true, "clarifying_question": "Where are you flying from, and where to?"}}
 - "NVDA stock price today" ->

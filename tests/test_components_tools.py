@@ -79,7 +79,7 @@ def test_golden_cases_tool_selection():
     # PRD Sec 118 golden cases
     assert "google_shopping" in classify_query("Find laptops under $800").tools
     assert "google_jobs" in classify_query("Find software engineering internships.").tools
-    assert "google_search" in classify_query("Teach me diffusion models.").tools
+    assert "google_search" in classify_query("Teach me CRISPR.").tools
 
 
 def test_planner_and_synthesis_contract():

@@ -24,19 +24,19 @@ YOUTUBE_JSON = {
     "video_results": [
         {
             "position_on_page": 1,
-            "title": "Diffusion Models Explained for Beginners",
+            "title": "CRISPR Gene Editing Explained for Beginners",
             "link": "https://www.youtube.com/watch?v=abc123",
             "video_id": "abc123",
             "channel": {"name": "AI Channel", "link": "https://www.youtube.com/@ai", "verified": True},
             "published_date": "2 weeks ago",
             "views": 150000,
             "length": "18:24",
-            "description": "Gentle intro to diffusion.",
+            "description": "Gentle intro to CRISPR.",
             "thumbnail": {"static": "https://i.ytimg.com/vi/abc123/hq720.jpg", "rich": "https://example.com/r.webp"},
         },
         {
             "position_on_page": 2,
-            "title": "Advanced Diffusion Research Seminar",
+            "title": "Advanced CRISPR Research Seminar",
             "link": "https://www.youtube.com/watch?v=def456",
             "video_id": "def456",
             "channel": {"name": "Lab Talks", "link": "https://www.youtube.com/@lab"},
@@ -59,8 +59,8 @@ def test_client_uses_search_query_for_youtube(monkeypatch):
 
     c = SerpApiClient(api_key="k")
     monkeypatch.setattr(c, "session", Cap())
-    c.search("youtube", "diffusion", query_param="search_query")
-    assert seen.get("search_query") == "diffusion"
+    c.search("youtube", "crispr", query_param="search_query")
+    assert seen.get("search_query") == "crispr"
     assert "q" not in seen
 
 
@@ -74,7 +74,7 @@ def test_video_result_normalization():
 def test_youtube_component_end_to_end():
     comp = SerpApiYouTube(api_key="k")
     comp._client = type("C", (), {"search": lambda self, e, q, **k: YOUTUBE_JSON})()
-    out = comp.run("diffusion tutorials")
+    out = comp.run("crispr tutorials")
     assert out["metadata"]["engine"] == "youtube"
     assert len(out["results"]) == 2
     assert out["evidence"][0]["tool_used"] == "youtube"
@@ -275,13 +275,13 @@ def test_hard_rules_leave_good_plan_alone():
 def test_hard_rules_video_learning():
     bad = {
         "use_case": "research",
-        "steps": [{"engine": "google_search", "query": "diffusion models"}],
+        "steps": [{"engine": "google_search", "query": "crispr gene editing"}],
         "presentation": "research_brief",
         "needs_clarification": False,
         "clarifying_question": "",
         "confidence": "high",
         "reasoning": "weak model missed video intent",
     }
-    plan = classify_with_llm("teach me diffusion models with video tutorials", complete=lambda s, u: bad)
+    plan = classify_with_llm("teach me crispr with video tutorials", complete=lambda s, u: bad)
     assert plan.steps[0].engine == "youtube"
     assert plan.presentation == "youtube_path"

@@ -79,7 +79,7 @@ class SerpApiYouTube(SerpApiComponentBase):
     ) -> dict[str, Any]:
         """Search YouTube videos.
 
-        :param query: e.g. "diffusion models explained for beginners".
+        :param query: e.g. "crispr gene editing explained for beginners".
         """
         num_results = max(1, min(int(num_results), 10))
         params: dict[str, Any] = {"hl": hl or self.hl, "gl": gl or self.gl}
