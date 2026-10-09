@@ -58,6 +58,10 @@ a { color: var(--color-accent-text); }
 .filters { display: none; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .filters.active { display: flex; }
 .filters input, .filters select { min-height: 44px; padding: 0 10px; border: 1px solid var(--color-border); border-radius: 8px; font-size: 15px; }
+.card .thumb img { max-width: 240px; width: 100%; height: auto; border-radius: var(--radius-flat); display: block; margin-bottom: 10px; border: 1px solid var(--color-border); }
+.card.clarify { border-left: 4px solid var(--color-spine); }
+.lede { font-size: 17px; }
+.cards h2 { font-size: 18px; margin: 18px 0 8px; }
 .trace { background: var(--color-card); border: 1px solid var(--color-border); border-radius: var(--radius); margin-top: 12px; }
 .trace summary { cursor: pointer; padding: 12px 14px; font-weight: 700; min-height: 44px; }
 .trace-body { padding: 0 14px 14px; font-size: 14px; }

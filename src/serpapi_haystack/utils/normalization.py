@@ -84,6 +84,7 @@ VERTICAL_WEIGHTS: dict[str, RankingWeights] = {
     "finance": RankingWeights(relevance=0.30, constraint_match=0.20, freshness=0.35, source_quality=0.10, confidence=0.05),
     "trends": RankingWeights(relevance=0.35, constraint_match=0.15, freshness=0.35, source_quality=0.10, confidence=0.05),
     "events": RankingWeights(relevance=0.35, constraint_match=0.25, freshness=0.25, source_quality=0.10, confidence=0.05),
+    "youtube": RankingWeights(relevance=0.40, constraint_match=0.15, freshness=0.15, source_quality=0.20, confidence=0.10),
 }
 
 _TRUSTED_DOMAINS = (

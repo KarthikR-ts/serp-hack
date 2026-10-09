@@ -553,3 +553,51 @@ class EventResult:
             metadata={k: v for k, v in item.items() if k not in {"title", "description"}},
         )
 
+
+@dataclass
+class VideoResult:
+    """Normalized YouTube video result (engine=youtube, per SerpApi docs)."""
+
+    title: str
+    url: str = ""
+    video_id: str = ""
+    channel: str = ""
+    channel_url: str = ""
+    channel_verified: bool = False
+    views: int | None = None
+    length: str = ""
+    published_date: str | None = None
+    description: str = ""
+    thumbnail: str | None = None
+    level: str | None = None  # beginner|intermediate|advanced (set by presenter)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    score: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_serpapi(cls, item: dict[str, Any]) -> "VideoResult":
+        channel = item.get("channel") or {}
+        thumb = item.get("thumbnail") or {}
+        thumbnail = thumb.get("static") if isinstance(thumb, dict) else thumb
+        views = item.get("views")
+        try:
+            views_i = int(views) if views is not None else None
+        except (TypeError, ValueError):
+            views_i = None
+        return cls(
+            title=str(item.get("title", "") or ""),
+            url=str(item.get("link", "") or ""),
+            video_id=str(item.get("video_id", "") or ""),
+            channel=str(channel.get("name", "") or ""),
+            channel_url=str(channel.get("link", "") or ""),
+            channel_verified=bool(channel.get("verified", False)),
+            views=views_i,
+            length=str(item.get("length", "") or ""),
+            published_date=item.get("published_date"),
+            description=str(item.get("description", "") or "")[:500],
+            thumbnail=thumbnail,
+            metadata={k: v for k, v in item.items() if k not in {"title", "link"}},
+        )
+

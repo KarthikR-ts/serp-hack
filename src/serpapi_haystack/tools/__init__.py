@@ -25,6 +25,7 @@ from ..components.google_scholar import SerpApiGoogleScholar
 from ..components.google_search import SerpApiGoogleSearch
 from ..components.google_shopping import SerpApiGoogleShopping
 from ..components.google_trends import SerpApiGoogleTrends
+from ..components.youtube import SerpApiYouTube
 
 SEARCH_DESCRIPTION = """Search the live Google web index for current information, websites, \
 documentation, products, comparisons, and general research. Use this when the user needs \
@@ -68,6 +69,9 @@ and regional search popularity."""
 
 EVENTS_DESCRIPTION = """Search Google Events for local concerts, conferences, meetups, festivals, dates, \
 venues, and ticket links."""
+
+YOUTUBE_DESCRIPTION = """Search YouTube videos via SerpApi. Use for video learning, tutorials, explainers, \
+conference talks, and visual reviews. Returns title, watch link, thumbnail, channel, views, and length."""
 
 
 def _format_tool_output(result: dict[str, Any]) -> str:
@@ -176,6 +180,11 @@ def create_events_tool(component: SerpApiGoogleEvents | None = None, **kwargs: A
     return ComponentTool(component=comp, name="google_events", description=EVENTS_DESCRIPTION, outputs_to_string={"source": "results", "handler": _format_results_list})
 
 
+def create_youtube_tool(component: SerpApiYouTube | None = None, **kwargs: Any) -> ComponentTool:
+    comp = component or SerpApiYouTube(**kwargs)
+    return ComponentTool(component=comp, name="youtube", description=YOUTUBE_DESCRIPTION, outputs_to_string={"source": "results", "handler": _format_results_list})
+
+
 FORMATTER = _format_tool_output
 
 __all__ = [
@@ -193,6 +202,7 @@ __all__ = [
     "FINANCE_DESCRIPTION",
     "TRENDS_DESCRIPTION",
     "EVENTS_DESCRIPTION",
+    "YOUTUBE_DESCRIPTION",
     "create_search_tool",
     "create_jobs_tool",
     "create_shopping_tool",
@@ -207,5 +217,6 @@ __all__ = [
     "create_finance_tool",
     "create_trends_tool",
     "create_events_tool",
+    "create_youtube_tool",
     "FORMATTER",
 ]

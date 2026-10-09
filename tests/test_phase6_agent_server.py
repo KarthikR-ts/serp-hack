@@ -45,7 +45,7 @@ def test_toolsets_construction():
     assert len(research_toolset(api_key="test").tools) == 5
     assert len(travel_toolset(api_key="test").tools) == 5
     assert len(academic_toolset(api_key="test").tools) == 3
-    assert len(universal_toolset(api_key="test").tools) == 14
+    assert len(universal_toolset(api_key="test").tools) == 15
 
 
 def test_toolset_for_analysis():
@@ -70,7 +70,7 @@ def test_fastapi_server_endpoints(monkeypatch):
     res_tools = client.get("/api/tools")
     assert res_tools.status_code == 200
     tools = res_tools.json()
-    assert len(tools) == 14
+    assert len(tools) == 15
 
     res_intents = client.post("/api/intents", json={"query": "Find software engineer jobs"})
     assert res_intents.status_code == 200

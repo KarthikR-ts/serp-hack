@@ -21,6 +21,8 @@
   document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { q.value = c.dataset.q; run(c.dataset.q); }));
   go.addEventListener("click", () => run(q.value));
   q.addEventListener("keydown", e => { if (e.key === "Enter") run(q.value); });
+  const agentGo = $("#agentGo");
+  if (agentGo) agentGo.addEventListener("click", () => runAgent(q.value));
   document.querySelectorAll("[data-again]").forEach(b => b.addEventListener("click", () => {
     const base = (q.value || "").trim(); if (!base) return say("Type a query first");
     const k = b.dataset.again;
@@ -112,8 +114,197 @@
     } catch { return false; }
   }
 
-  function renderTrace(analysis, plan, summary) {
-    traceEl.textContent = "";
+  /* ---- Autonomous LLM agent (api/agent) ---- */
+  function safeHttp(url) {
+    try { const u = new URL(String(url), location.origin); return (u.protocol === "http:" || u.protocol === "https:") ? u.href : null; }
+    catch { return null; }
+  }
+  function safeImg(src) {
+    try { const u = new URL(String(src), location.origin); return u.protocol === "https:" ? u.href : null; }
+    catch { return null; }
+  }
+  function fmtViews(v) {
+    if (v == null) return "";
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + "M views";
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + "K views";
+    return v + " views";
+  }
+  function factsList(pairs) {
+    const facts = document.createElement("ul"); facts.className = "facts";
+    pairs.forEach(([k, v]) => {
+      if (v == null || v === "") return;
+      const li = document.createElement("li");
+      li.appendChild(el("b", k + ": ")); li.appendChild(el("span", String(v).slice(0, 200)));
+      facts.appendChild(li);
+    });
+    return facts;
+  }
+
+  async function runAgent(rawQuery) {
+    const query = (rawQuery || "").trim().slice(0, 500);
+    if (!query) return say("Type a query first");
+    cards.textContent = ""; srcEl.textContent = ""; cmpWrap.textContent = ""; $("#learn").style.display = "none";
+    status.textContent = "";
+    const t = el("p", "Agent thinking: classifying request…"); t.setAttribute("aria-busy", "true");
+    status.appendChild(t);
+    try {
+      const r = await fetch("api/agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) });
+      if (r.status === 503) { status.textContent = ""; return say("LLM key missing. Set OPENROUTER_API_KEY in .env and restart."); }
+      if (r.status === 429) { status.textContent = ""; return say("Rate limited. Wait a moment."); }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      last = await r.json();
+      paintAgent(last);
+    } catch (e) { status.textContent = ""; say("Agent request failed. Backend running?"); }
+  }
+
+  function paintAgent(data) {
+    status.textContent = ""; selected.clear();
+    const cls = data.classification || {};
+    renderTrace(
+      { intent: [cls.use_case || "agent"].concat(data.legacy_intents || []), tools: (cls.steps || []).map(s => s.engine) },
+      (cls.steps || []).map(s => ({ tool: s.engine, query: s.query })),
+      data.research_trace || {}
+    );
+    if (data.status === "clarify") {
+      const box = el("div", null, "card clarify");
+      box.appendChild(el("strong", "One quick question: "));
+      box.appendChild(el("span", data.clarifying_question || "Could you add a bit more detail?"));
+      box.appendChild(el("p", "Refine your query above and press Agent again.", "meta"));
+      cards.appendChild(box);
+      q.focus();
+      return;
+    }
+    const p = data.presentation || { type: "generic", results: [] };
+    switch (p.type) {
+      case "shopping_top2": paintShopping(p); break;
+      case "youtube_path": paintVideos(p); break;
+      case "finance_snapshot": paintFinance(p); break;
+      case "deep_dive": paintDeepDive(p); break;
+      case "travel_choices": paintTravel(p); break;
+      default: (p.jobs || p.places || p.results || []).slice(0, 24).forEach((r, i) => cards.appendChild(card(r, i)));
+    }
+    srcEl.textContent = "";
+    (data.sources || []).forEach(s => {
+      const li = document.createElement("li");
+      li.append(link(s.url || "#", (s.title || s.url || "source").slice(0, 90)), " ");
+      li.appendChild(el("span", " [" + (s.type || "") + "] " + (s.claim || "").slice(0, 140), "meta"));
+      srcEl.appendChild(li);
+    });
+    srcCount.textContent = String((data.sources || []).length);
+    status.appendChild(el("p", (data.summary || "") + " Confidence: " + (data.confidence || "?") + ".", "meta"));
+    animate();
+  }
+
+  function paintShopping(p) {
+    (p.picks || []).slice(0, 2).forEach((item) => {
+      const c = el("div", null, "card list-item"); c.setAttribute("data-kind", "product");
+      const url = safeHttp(item.url);
+      const imgSrc = item.image ? safeImg(item.image) : null;
+      if (url && imgSrc) {
+        const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.className = "thumb"; a.setAttribute("aria-label", "Open product page");
+        const img = document.createElement("img"); img.src = imgSrc; img.alt = String(item.title || "product").slice(0, 120); img.loading = "lazy";
+        a.appendChild(img); c.appendChild(a);
+      }
+      c.appendChild(el("h3", String(item.title || "Product").slice(0, 120)));
+      c.appendChild(factsList([
+        ["Price", item.price], ["Seller", item.seller],
+        ["Rating", item.rating != null ? item.rating + (item.reviews ? " (" + item.reviews + " reviews)" : "") : undefined],
+        ["Why this", item.why],
+      ]));
+      const acts = el("div", null, "actions");
+      if (url) acts.appendChild(link(url, "Open product page"));
+      c.appendChild(acts);
+      cards.appendChild(c);
+    });
+  }
+
+  function paintVideos(p) {
+    const order = [["beginner", "Start here"], ["intermediate", "Go deeper"], ["advanced", "Master it"]];
+    order.forEach(([lvl, label]) => {
+      const vids = ((p.levels || {})[lvl]) || [];
+      if (!vids.length) return;
+      cards.appendChild(el("h2", label + " (" + vids.length + ")"));
+      vids.forEach((v) => {
+        const c = el("div", null, "card list-item"); c.setAttribute("data-kind", "video");
+        const url = safeHttp(v.url);
+        const imgSrc = v.thumbnail ? safeImg(v.thumbnail) : null;
+        if (url && imgSrc) {
+          const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.className = "thumb"; a.setAttribute("aria-label", "Watch video");
+          const img = document.createElement("img"); img.src = imgSrc; img.alt = String(v.title || "video").slice(0, 120); img.loading = "lazy";
+          a.appendChild(img); c.appendChild(a);
+        }
+        c.appendChild(el("h3", String(v.title || "Video").slice(0, 120)));
+        c.appendChild(factsList([
+          ["Channel", v.channel],
+          ["Length", v.length],
+          ["Views", fmtViews(v.views)],
+          ["Why this", v.why],
+        ]));
+        const acts = el("div", null, "actions");
+        if (url) acts.appendChild(link(url, "Watch"));
+        c.appendChild(acts);
+        cards.appendChild(c);
+      });
+    });
+  }
+
+  function paintFinance(p) {
+    const qd = p.quote || {};
+    const c = el("div", null, "card list-item"); c.setAttribute("data-kind", "finance");
+    c.appendChild(el("h3", String(qd.stock_name || qd.symbol || "Quote").slice(0, 120)));
+    c.appendChild(factsList([
+      ["Symbol", qd.symbol], ["Price", qd.price],
+      ["Change", [qd.price_change, qd.percent_change].filter(Boolean).join(" ") || undefined],
+      ["Exchange", qd.exchange], ["Currency", qd.currency],
+    ]));
+    if (qd.summary) c.appendChild(el("p", String(qd.summary).slice(0, 280)));
+    cards.appendChild(c);
+    if ((p.headlines || []).length) {
+      cards.appendChild(el("h2", "Latest headlines"));
+      const ol = document.createElement("ol");
+      p.headlines.forEach(h => {
+        const li = document.createElement("li");
+        const url = safeHttp(h.url);
+        li.append(url ? link(url, String(h.title || url).slice(0, 120)) : el("span", String(h.title || "").slice(0, 120)));
+        if (h.date) li.appendChild(el("span", " (" + h.date + ")", "meta"));
+        ol.appendChild(li);
+      });
+      cards.appendChild(ol);
+    }
+    if (p.disclaimer) cards.appendChild(el("p", p.disclaimer, "meta"));
+  }
+
+  function paintDeepDive(p) {
+    if (p.summary) cards.appendChild(el("p", p.summary, "lede"));
+    if ((p.findings || []).length) {
+      cards.appendChild(el("h2", "Key findings"));
+      const ol = document.createElement("ol");
+      p.findings.forEach(f => {
+        const li = document.createElement("li");
+        li.appendChild(el("span", String(f.claim || f.title || "").slice(0, 280)));
+        const url = safeHttp(f.url);
+        if (url) { li.appendChild(document.createTextNode(" ")); li.appendChild(link(url, "source")); }
+        ol.appendChild(li);
+      });
+      cards.appendChild(ol);
+    }
+    if ((p.papers || []).length) {
+      cards.appendChild(el("h2", "Papers"));
+      p.papers.forEach((r, i) => cards.appendChild(card(r, i)));
+    }
+  }
+
+  function paintTravel(p) {
+    const note = el("p", p.note || "Planned and ready — no booking performed.", "meta");
+    cards.appendChild(note);
+    [["Flights", p.flights], ["Hotels", p.hotels], ["Places", p.places]].forEach(([label, list]) => {
+      if (!list || !list.length) return;
+      cards.appendChild(el("h2", label));
+      list.forEach((r, i) => cards.appendChild(card(r, i)));
+    });
+  }
+
+  function renderTrace(analysis, plan, summary) {    traceEl.textContent = "";
     const p1 = el("p", "Intent: " + (analysis.intent || []).join(", "));
     const p2 = el("p", "Tools: " + (analysis.tools || []).join(", "));
     const p3 = el("p", "Queries: " + (plan || []).map(s => s.tool + ": " + String(s.query).slice(0, 80)).join(" | "));

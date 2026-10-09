@@ -2,18 +2,21 @@
 
 > **"You ask the question. The agent chooses how to research it."**
 
-Haystack integration + reference application that turns SerpApi's 14 specialized search verticals into composable Haystack tools: shared client → 14 search components → Haystack `ComponentTool` wrappers → logical toolsets → universal agent planner & FastAPI web server.
+Haystack integration + reference application that turns SerpApi's 15 specialized search verticals into composable Haystack tools: shared client → 15 search components → Haystack `ComponentTool` wrappers → logical toolsets → universal agent planner & FastAPI web server.
+
+Two ways to ask: regex-routed **Research** flow, or the autonomous **Agent (LLM)** flow that classifies with an LLM, calls the exact SerpApi endpoints, and returns ranked picks.
 
 ## What's included
 
-- **14 SerpApi Components**:
+- **15 SerpApi Components**:
   - Web & News: `SerpApiGoogleSearch`, `SerpApiGoogleNews`
   - Commerce & Careers: `SerpApiGoogleShopping`, `SerpApiGoogleJobs`
   - Academic & IP: `SerpApiGoogleScholar`, `SerpApiGooglePatents`, `SerpApiGoogleForums`, `SerpApiGoogleImages`
   - Local, Travel & Finance: `SerpApiGoogleMaps`, `SerpApiGoogleFlights`, `SerpApiGoogleHotels`, `SerpApiGoogleFinance`, `SerpApiGoogleTrends`, `SerpApiGoogleEvents`
-- **Normalized Models**: `SearchResult`, `JobResult`, `ProductResult`, `NewsResult`, `ScholarResult`, `PatentResult`, `ForumResult`, `ImageResult`, `PlaceResult`, `FlightResult`, `HotelResult`, `FinanceResult`, `TrendResult`, `EventResult`, `Evidence`.
-- **Agent Router & Intent Classifier**: Deterministic rule-based + hybrid LLM intent taxonomy and multi-step planner.
-- **FastAPI Web App & API Server**: REST & Streaming endpoints (`src/serpapi_haystack/server.py`).
+  - Video: `SerpApiYouTube` (`engine=youtube`, `search_query` param per SerpApi docs)
+- **Normalized Models**: `SearchResult`, `JobResult`, `ProductResult`, `NewsResult`, `ScholarResult`, `PatentResult`, `ForumResult`, `ImageResult`, `PlaceResult`, `FlightResult`, `HotelResult`, `FinanceResult`, `TrendResult`, `EventResult`, `VideoResult`, `Evidence`.
+- **Agent Router & Intent Classifier**: Deterministic rule-based intent taxonomy and multi-step planner, plus an LLM router (OpenRouter) that classifies → calls exact endpoints → ranks best picks.
+- **FastAPI Web App & API Server**: REST & Streaming endpoints (`src/serpapi_haystack/server.py`), including `POST /api/agent` for the autonomous flow.
 
 ## Layout
 
@@ -21,14 +24,14 @@ Haystack integration + reference application that turns SerpApi's 14 specialized
 src/serpapi_haystack/
   client/        SerpApiClient, exceptions
   models/        Normalized result dataclasses & evidence tracking
-  components/    14 Haystack @component implementations
+  components/    15 Haystack @component implementations
   tools/         ComponentTool factories + rich when/when-not descriptions
   toolsets/      Research, Media, Academic, Shopping, Careers, Travel, Finance, Local, Universal
-  agents/        Intent classifier taxonomy, multi-step planner, Universal Agent factory
+  agents/        Intent classifier taxonomy, multi-step planner, LLM router, Universal Agent factory
   utils/         Cache, retries, normalization, deduplication & ranking weights
   server.py      FastAPI REST & Streaming backend server
-tests/           Comprehensive mocked test suite (46/46 passed, no live key required)
-examples/        Phase 4, Phase 5, Phase 6 demonstration scripts
+tests/           Comprehensive mocked test suite (no live key required)
+examples/        Demonstration scripts
 docs/            architecture.md (reconnaissance & design notes)
 ```
 
@@ -37,6 +40,7 @@ docs/            architecture.md (reconnaissance & design notes)
 ```bash
 pip install -e ".[dev,server]"
 export SERPAPI_API_KEY=...
+export OPENROUTER_API_KEY=...   # required only for the Agent (LLM) flow
 python -m pytest
 
 # Run FastAPI Server
@@ -47,6 +51,8 @@ python examples/phase4_media_academic.py
 python examples/phase5_travel_finance_local.py
 python examples/phase6_universal_app.py
 ```
+
+Open http://127.0.0.1:8000 — **Research** uses the instant regex router, **Agent (LLM)** runs classify → exact endpoints → ranked picks (shopping top-2 with clickable images, YouTube learning paths, finance snapshots, deep-dive reports, travel choices ready to book — booking itself is out of scope).
 
 ## Compatibility: Upstream Integration & Standalone Package
 

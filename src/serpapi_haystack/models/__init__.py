@@ -14,6 +14,7 @@ from .results import (
     ScholarResult,
     SearchResult,
     TrendResult,
+    VideoResult,
 )
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "FinanceResult",
     "TrendResult",
     "EventResult",
+    "VideoResult",
     "Evidence",
 ]
 

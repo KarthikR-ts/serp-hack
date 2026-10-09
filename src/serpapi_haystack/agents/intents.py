@@ -215,7 +215,7 @@ def select_tools(analysis: QueryAnalysis, available: list[str] | None = None) ->
         "google_search", "google_jobs", "google_shopping", "google_news",
         "google_scholar", "google_patents", "google_forums", "google_images",
         "google_maps", "google_flights", "google_hotels", "google_finance",
-        "google_trends", "google_events",
+        "google_trends", "google_events", "youtube",
     ]
     pool = available or default_available
     return [t for t in analysis.tools if t in pool] or ["google_search"]

@@ -13,6 +13,7 @@ from .google_scholar import SerpApiGoogleScholar
 from .google_search import SerpApiGoogleSearch
 from .google_shopping import SerpApiGoogleShopping
 from .google_trends import SerpApiGoogleTrends
+from .youtube import SerpApiYouTube
 
 __all__ = [
     "SerpApiComponentBase",
@@ -30,5 +31,6 @@ __all__ = [
     "SerpApiGoogleFinance",
     "SerpApiGoogleTrends",
     "SerpApiGoogleEvents",
+    "SerpApiYouTube",
 ]
 

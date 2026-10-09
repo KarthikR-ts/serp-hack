@@ -38,11 +38,28 @@ DEFAULT_TTL_BY_ENGINE: dict[str, int] = {
     "google_news": 120,  # news: very short (Phase 4, reserved)
     "google_scholar": 86400,  # scholar: longer (Phase 4, reserved)
     "google_flights": 60,  # flights: very short (Phase 5, reserved)
+    "youtube": 3600,  # video search: moderate-long
     "default": 900,
 }
 
-# Engines that this Phase (0-3) officially supports.
-SUPPORTED_ENGINES = {"google", "google_jobs", "google_shopping"}
+# Engines officially supported (per SerpApi docs: serpapi.com/search-api).
+SUPPORTED_ENGINES = {
+    "google",
+    "google_jobs",
+    "google_shopping",
+    "google_news",
+    "google_scholar",
+    "google_patents",
+    "google_forums",
+    "google_images",
+    "google_maps",
+    "google_flights",
+    "google_hotels",
+    "google_finance",
+    "google_trends",
+    "google_events",
+    "youtube",
+}
 
 
 def _redact(params: dict[str, Any]) -> dict[str, Any]:
@@ -89,12 +106,14 @@ class SerpApiClient:
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
-    def search(self, engine: str, q: str, **params: Any) -> dict[str, Any]:
+    def search(self, engine: str, q: str, query_param: str = "q", **params: Any) -> dict[str, Any]:
         """Execute a SerpApi search for any engine.
 
         :param engine: SerpApi engine, e.g. ``google``, ``google_jobs``,
-            ``google_shopping``.
+            ``google_shopping``, ``youtube``.
         :param q: query string (must be non-empty).
+        :param query_param: name of the query parameter. Most engines use
+            ``q``; YouTube uses ``search_query`` (per SerpApi docs).
         :param params: extra SerpApi parameters (location, hl, gl, num, ...).
         :returns: parsed JSON dict from SerpApi.
         :raises SerpApiError: normalized error hierarchy.
@@ -102,10 +121,9 @@ class SerpApiClient:
         if not q or not str(q).strip():
             raise SerpApiBadRequestError("Query 'q' must be a non-empty string.")
         if engine not in SUPPORTED_ENGINES:
-            # Allow forward-compat for Phase 4/5 engines but warn.
-            logger.warning("Engine '%s' is not part of Phase 0-3 MVP support %s.", engine, SUPPORTED_ENGINES)
+            logger.warning("Engine '%s' is not in supported set %s.", engine, SUPPORTED_ENGINES)
         request_id = uuid.uuid4().hex[:12]
-        payload: dict[str, Any] = {"engine": engine, "q": q.strip(), "api_key": self.api_key, **params}
+        payload: dict[str, Any] = {"engine": engine, query_param: q.strip(), "api_key": self.api_key, **params}
         cache_key = self._cache_key(engine, q, params)
         if self.cache is not None:
             try:
@@ -229,6 +247,9 @@ class SerpApiClient:
 
     def google_shopping(self, q: str, **kwargs: Any) -> dict[str, Any]:
         return self.search("google_shopping", q, **kwargs)
+
+    def youtube(self, q: str, **kwargs: Any) -> dict[str, Any]:
+        return self.search("youtube", q, query_param="search_query", **kwargs)
 
 
 def resolve_api_key(explicit: str | None = None) -> str:

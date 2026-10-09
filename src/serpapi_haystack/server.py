@@ -26,6 +26,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from serpapi_haystack.agents.intents import QueryAnalysis, classify_query
+from serpapi_haystack.agents.llm_router import LLMKeyMissing
+from serpapi_haystack.agents.llm_router import run_agent as run_llm_agent
 from serpapi_haystack.agents.universal import build_plan, synthesis_input
 from serpapi_haystack.toolsets import (
     TOOL_FACTORIES,
@@ -134,6 +136,14 @@ class ChatRequest(BaseModel):
     num_results: int = Field(10, ge=1, le=10)
 
 
+class AgentRequest(BaseModel):
+    # Autonomous LLM flow: classify -> exact endpoints -> ranked picks.
+    # No key fields: SERPAPI_API_KEY + OPENROUTER_API_KEY resolve server-side.
+    query: str = Field(..., min_length=1, max_length=500)
+    conversation_id: str | None = Field(None, max_length=64)
+    num_results: int = Field(8, ge=1, le=10)
+
+
 DOMAIN_MODES: dict[str, dict[str, Any]] = {
     "research": {
         "label": "Research",
@@ -152,7 +162,7 @@ DOMAIN_MODES: dict[str, dict[str, Any]] = {
     },
     "learning": {
         "label": "Learning",
-        "tools": ["google_scholar", "google_search", "google_forums"],
+        "tools": ["google_scholar", "youtube", "google_search", "google_forums"],
         "filters": ["level", "format", "free_only"],
         "stages": ["Goal", "Prerequisites", "Fundamentals", "Resources", "Projects", "Papers", "Advanced"],
     },
@@ -333,6 +343,21 @@ def chat_agent(req: ChatRequest, request: Request) -> dict[str, Any]:
     _check_rate(request, "chat")
     q = sanitize_query(req.query)
     return _run_chat(q, req.mode, req.deep_research, req.num_results)
+
+
+@app.post("/api/agent")
+def agent_run(req: AgentRequest, request: Request) -> dict[str, Any]:
+    """Autonomous LLM agent: classify -> exact SerpApi endpoints -> best picks.
+
+    Read-only. Returns choices (products, videos, flights/hotels) ready to
+    open — never performs bookings, applications, or purchases.
+    """
+    _check_rate(request, "chat")
+    q = sanitize_query(req.query)
+    try:
+        return run_llm_agent(q, num_results=req.num_results)
+    except LLMKeyMissing as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
 
 @app.post("/api/chat/stream")

@@ -20,6 +20,7 @@ from ..tools import (
     create_search_tool,
     create_shopping_tool,
     create_trends_tool,
+    create_youtube_tool,
 )
 
 
@@ -37,11 +38,12 @@ def research_toolset(**kwargs) -> Toolset:
 
 
 def media_toolset(**kwargs) -> Toolset:
-    """Media & Visual Toolset: News, Images, Search."""
+    """Media & Visual Toolset: News, Images, YouTube, Search."""
     return Toolset(
         tools=[
             create_news_tool(**kwargs),
             create_images_tool(**kwargs),
+            create_youtube_tool(**kwargs),
             create_search_tool(**kwargs),
         ]
     )
@@ -135,6 +137,7 @@ def universal_toolset(**kwargs) -> Toolset:
             create_finance_tool(**kwargs),
             create_trends_tool(**kwargs),
             create_events_tool(**kwargs),
+            create_youtube_tool(**kwargs),
         ]
     )
 
@@ -154,6 +157,7 @@ TOOL_FACTORIES = {
     "google_finance": create_finance_tool,
     "google_trends": create_trends_tool,
     "google_events": create_events_tool,
+    "youtube": create_youtube_tool,
 }
 
 
