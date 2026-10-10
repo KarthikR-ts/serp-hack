@@ -59,7 +59,10 @@ export async function streamChat(
     signal: opts.signal,
   });
   if (!r.ok || !r.body) return false;
-  const reader = r.body.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = r.body.getReader();
+  } catch { return false; }
   const dec = new TextDecoder();
   let buf = "", events = 0;
   for (;;) {

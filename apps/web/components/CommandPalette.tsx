@@ -53,7 +53,7 @@ export function CommandPalette({
         >
           <motion.div
             role="dialog" aria-modal="true" aria-label="Command palette"
-            className="surface mt-[10dvh] h-fit max-h-[68dvh] w-full max-w-[580px] overflow-hidden !rounded-[16px]"
+            className="surface mt-[10vh] h-fit max-h-[68vh] w-full max-w-[580px] overflow-hidden !rounded-[16px] supports-[height:100dvh]:mt-[10dvh] supports-[height:100dvh]:max-h-[68dvh]"
             initial={reduce ? false : { opacity: 0, transform: "translateY(-8px) scale(0.99)" }}
             animate={{ opacity: 1, transform: "none" }}
             exit={reduce ? undefined : { opacity: 0, transform: "translateY(-6px)" }}
@@ -84,7 +84,7 @@ export function CommandPalette({
                 ✕
               </button>
             </div>
-            <div role="listbox" aria-label="Commands" className="max-h-[52dvh] overflow-auto p-1.5">
+            <div role="listbox" aria-label="Commands" className="max-h-[52vh] overflow-auto p-1.5 supports-[height:100dvh]:max-h-[52dvh]">
               {hits.map((c) => (
                 <button
                   key={c.id} role="option" aria-selected="false" type="button"

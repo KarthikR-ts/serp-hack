@@ -75,6 +75,12 @@ export default function Workspace() {
   const pending = useRef<{ q: string; mode: string; deep: boolean } | null>(null);
 
   const say = useCallback((msg: string) => setToast({ msg, key: Date.now() }), []);
+  const goHome = useCallback(() => {
+    aborter.current?.abort();
+    pending.current = null;
+    setQuery(""); setRun(null); setPlanPreview(null);
+    setPhase("idle"); setProgress("Ready"); setErr(null);
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2400);
@@ -91,12 +97,18 @@ export default function Workspace() {
     window.addEventListener("online", on);
     window.addEventListener("offline", on);
     const keys = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalOpen((o) => !o); }
-      if (e.key === "Escape") setPalOpen(false);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalOpen((o) => !o); return; }
+      if (e.key !== "Escape") return;
+      // Esc hierarchy: palette first, then blur an edited field, then home.
+      // (Palette handles its own Esc in the capture phase and stops it there.)
+      const t = e.target as HTMLElement | null;
+      const editing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (editing) { t.blur(); return; }
+      goHome();
     };
     window.addEventListener("keydown", keys);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); window.removeEventListener("keydown", keys); };
-  }, []);
+  }, [goHome]);
 
   const cycleTheme = () => {
     const next = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
@@ -124,8 +136,12 @@ export default function Workspace() {
   const startRun = async (q: string, kind: "chat" | "agent", m = mode, d = deep, flt: Record<string, unknown> = {}) => {
     const text = q.trim().slice(0, 2000);
     if (!text) { say("Type a question first"); return; }
-    aborter.current?.abort();
-    aborter.current = new AbortController();
+    if (typeof AbortController !== "undefined") {
+      aborter.current?.abort();
+      aborter.current = new AbortController();
+    } else {
+      aborter.current = null;
+    }
     setRun(null); setPlanPreview(null); setVisible(10);
     setSelected(new Map()); setFilterVertical(null); setFilters(flt);
     setDismissed(new Set()); setErr(null);
@@ -134,11 +150,11 @@ export default function Workspace() {
     document.getElementById("answer")?.scrollIntoView({ block: "start", behavior: "smooth" });
     try {
       if (kind === "agent") {
-        const data = await api.agent(text, { filters: flt, signal: aborter.current.signal });
+        const data = await api.agent(text, { filters: flt, signal: aborter.current?.signal });
         setRun({ kind, data });
       } else {
         try {
-          const preview = await api.intents(text, aborter.current.signal);
+          const preview = await api.intents(text, aborter.current?.signal);
           if ((preview.requires_confirmation || d) && sessionStorage.getItem("serp_skip_plan") !== "1") {
             setPlanPreview(preview);
             setPhase("planning");
@@ -195,8 +211,10 @@ export default function Workspace() {
   const flash = (eid: string | null) => {
     setFlashEid(eid);
     if (!eid) return;
+    const safe = (typeof CSS !== "undefined" && typeof CSS.escape === "function")
+      ? CSS.escape(eid) : String(eid).replace(/["\\]/g, "");
     requestAnimationFrame(() => {
-      document.querySelector(`[data-eids~="${CSS.escape(eid)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      document.querySelector(`[data-eids~="${safe}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     });
   };
 

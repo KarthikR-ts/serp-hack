@@ -149,7 +149,7 @@ export function CompareTray({
           >
             <motion.div
               role="dialog" aria-modal="true" aria-label="Comparison"
-              className="surface flex max-h-[82dvh] w-full max-w-[880px] flex-col overflow-hidden !rounded-[16px]"
+              className="surface flex max-h-[82vh] w-full max-w-[880px] flex-col overflow-hidden !rounded-[16px] supports-[height:100dvh]:max-h-[82dvh]"
               initial={reduce ? false : { opacity: 0, transform: "translateY(24px) scale(0.98)" }}
               animate={{ opacity: 1, transform: "none" }}
               exit={reduce ? undefined : { opacity: 0, transform: "translateY(12px) scale(0.98)" }}

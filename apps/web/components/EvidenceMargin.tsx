@@ -35,7 +35,7 @@ export function EvidenceMargin({
 }) {
   const [tab, setTab] = useState<"sources" | "steps" | "detail">("sources");
   return (
-    <aside id="sources" aria-label="Sources and evidence" className="lg:sticky lg:top-[84px] lg:max-h-[calc(100dvh-104px)] lg:overflow-auto">
+    <aside id="sources" aria-label="Sources and evidence" className="lg:sticky lg:top-[84px] lg:max-h-[calc(100vh-104px)] lg:overflow-auto supports-[height:100dvh]:lg:max-h-[calc(100dvh-104px)]">
       <div className="surface overflow-hidden !rounded-[14px]">
         <div role="tablist" aria-label="Evidence tabs" className="flex border-b border-[var(--line)] px-2 pt-2">
           {(
@@ -56,7 +56,7 @@ export function EvidenceMargin({
           ))}
         </div>
 
-        <div className="max-h-[50dvh] overflow-auto p-3 lg:max-h-none">
+        <div className="max-h-[50vh] overflow-auto p-3 supports-[height:100dvh]:max-h-[50dvh] lg:max-h-none">
           {tab === "sources" && (
             <div role="tabpanel" aria-label="Sources">
               {!sources.length && (
