@@ -30,8 +30,18 @@ try:
 except ImportError:
     pass
 
-from .intents import QueryAnalysis, _BUDGET_RE, _LEARN_RE, _SHOP_RE, classify_query
+from .intents import (
+    _BUDGET_RE,
+    _FLIGHT_RE,
+    _HOTEL_RE,
+    _LEARN_RE,
+    _SHOP_RE,
+    QueryAnalysis,
+    classify_query,
+)
+from ..models.actions import attach_actions
 from ..toolsets import TOOL_FACTORIES
+from ..utils.travel import flight_dates, parse_trip_dates, resolve_airport
 from ..utils.limits import BudgetLimits, BudgetTracker
 from ..utils.observability import RunTrace, ToolCallRecord
 from ..utils.presentation import (
@@ -158,7 +168,11 @@ class RouterPlan:
     clarifying_question: str = ""
     confidence: Literal["high", "medium", "low"] = "medium"
     reasoning: str = ""
-
+    # Agentic slots: structured choices the run needs (origin/destination/
+    # dates/budget/travelers for travel, role/location for jobs,
+    # product/budget for shopping). Keys are free-form short strings.
+    slots: dict[str, Any] = field(default_factory=dict)
+    missing_slots: list[str] = field(default_factory=list)
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
@@ -177,6 +191,14 @@ HARD RULES (follow in order):
    then use_case MUST be "shopping", the FIRST step MUST use engine
    "google_shopping", and presentation MUST be "shopping_top2".
    Never label buy-intent queries as "research".
+1b. TRAVEL BOOKING always means travel, never shopping. If the query has
+    travel words (flight, hotel, trip, travel, itinerary, fly, stay,
+    vacation, book a flight/hotel, reserve a room), then use_case MUST be
+    "travel", the FIRST step MUST use "google_flights" (or "google_hotels"
+    for stays), and presentation MUST be "travel_choices". A budget
+    ("under 60000") never turns travel into shopping. For google_flights
+    steps, ALSO fill slots origin/destination/dates — the runner resolves
+    airport codes from slots, not from the query string.
 2. VIDEO LEARNING means youtube. "learn X", "tutorial", "course videos",
    "explain X on video" -> FIRST step engine "youtube", presentation "youtube_path".
 3. Prefer the specialized engine over google_search whenever one fits
@@ -192,7 +214,17 @@ FEW-SHOT EXAMPLES:
 - "teach me crispr with videos" ->
   {{"use_case": "youtube_learning", "steps": [{{"engine": "youtube", "query": "crispr gene editing tutorial beginners", "num_results": 8}}], "presentation": "youtube_path"}}
 - "plan a trip" (no origin/destination) ->
-  {{"use_case": "travel", "steps": [], "presentation": "travel_choices", "needs_clarification": true, "clarifying_question": "Where are you flying from, and where to?"}}
+  {{"use_case": "travel", "steps": [], "presentation": "travel_choices", "needs_clarification": true, "clarifying_question": "Where are you flying from, and where to?", "slots": {{}}, "missing_slots": ["origin", "destination", "dates"]}}
+- "book a flight from Bengaluru to Tokyo next month under 60000" ->
+  {{"use_case": "travel", "steps": [{{"engine": "google_flights", "query": "Bengaluru to Tokyo flights", "num_results": 8}}, {{"engine": "google_hotels", "query": "hotels Tokyo", "num_results": 8}}], "presentation": "travel_choices", "slots": {{"origin": "Bengaluru", "destination": "Tokyo", "dates": "next month", "budget": "60000"}}, "missing_slots": []}}
+
+SLOT EXTRACTION (for agentic handoff — every pick gets an action button):
+- travel: origin, destination, dates, budget, travelers
+- jobs: role, location, remote
+- shopping: product, budget, brand
+- Always extract what the user stated into "slots" (short strings, max 120 chars each).
+- List genuinely absent required choices in "missing_slots" using exactly these keys.
+- Set needs_clarification=true ONLY when a required choice is missing: travel without origin/destination, jobs without any role, or a query under 3 meaningful words. Otherwise false.
 - "NVDA stock price today" ->
   {{"use_case": "finance", "steps": [{{"engine": "google_finance", "query": "NVDA", "num_results": 5}}, {{"engine": "google_news", "query": "Nvidia stock news", "num_results": 5}}], "presentation": "finance_snapshot"}}
 
@@ -203,6 +235,8 @@ OUTPUT CONTRACT:
    "presentation": "<one of: {presentations}>",
    "needs_clarification": <true|false>,
    "clarifying_question": "<one specific question or empty>",
+   "slots": {{"<slot key>": "<short value>"}},
+   "missing_slots": ["<absent required slot keys>"],
    "confidence": "<high|medium|low>",
    "reasoning": "<one sentence>"}}
 - Use at most 3 steps. First step is the primary engine.
@@ -213,6 +247,13 @@ OUTPUT CONTRACT:
 
 
 _VIDEO_LEARN_RE = re.compile(r"\b(video|videos|tutorial|tutorials|talk|course videos|youtube)\b", re.I)
+
+# Travel-booking verbs beat the buy-intent rule: "book a flight/hotel" is
+# travel research ending in a Book-ticket handoff, never shopping.
+_TRAVEL_BOOK_RE = re.compile(
+    r"\b(flight|flights|fly|airline|hotel|hotels|trip|travel|itinerary|vacation|stay|check-in|resort|airbnb)\b",
+    re.I,
+)
 
 
 def _enforce_hard_rules(query: str, plan: RouterPlan) -> RouterPlan:
@@ -226,6 +267,22 @@ def _enforce_hard_rules(query: str, plan: RouterPlan) -> RouterPlan:
         return plan
     q = query or ""
     engines = [s.engine for s in plan.steps]
+    # Travel booking ("book a flight/hotel", trip planning) is never shopping,
+    # even when a budget is stated — it ends in a Book-ticket handoff.
+    if _TRAVEL_BOOK_RE.search(q) or _FLIGHT_RE.search(q) or _HOTEL_RE.search(q):
+        if plan.use_case == "shopping":
+            plan.use_case = "travel"
+        if plan.presentation == "shopping_top2":
+            plan.presentation = "travel_choices"
+        if "google_shopping" in engines and not any(
+            e in engines for e in ("google_flights", "google_hotels", "google_maps")
+        ):
+            plan.steps = [s for s in plan.steps if s.engine != "google_shopping"] or [
+                RouterStep(engine="google_flights", query=q.strip()[:300] or q)
+            ]
+            engines = [s.engine for s in plan.steps]
+        plan.reasoning = (plan.reasoning + " [rule: travel-booking -> travel]").strip()
+        return plan
     buy_signal = bool(_SHOP_RE.search(q) or _BUDGET_RE.search(q) or "$" in q or "₹" in q)
     if buy_signal and "google_shopping" not in engines:
         plan.steps.insert(0, RouterStep(engine="google_shopping", query=q.strip()[:300] or q))
@@ -279,10 +336,85 @@ def classify_with_llm(query: str, complete: CompleteFn | None = None) -> RouterP
         plan.steps = [RouterStep(engine="google_search", query=query)]
     plan.needs_clarification = bool(parsed.get("needs_clarification", False))
     plan.clarifying_question = str(parsed.get("clarifying_question", ""))[:300]
+    raw_slots = parsed.get("slots")
+    if isinstance(raw_slots, dict):
+        plan.slots = {str(k)[:40]: str(v)[:120] for k, v in raw_slots.items() if str(v).strip()} or {}
+    raw_missing = parsed.get("missing_slots")
+    if isinstance(raw_missing, list):
+        plan.missing_slots = [str(s)[:40] for s in raw_missing if isinstance(s, str) and str(s).strip()][:8]
     if parsed.get("confidence") in ("high", "medium", "low"):
         plan.confidence = parsed["confidence"]
     plan.reasoning = str(parsed.get("reasoning", ""))[:300]
     return _enforce_hard_rules(query, plan)
+
+
+def _invoke_kwargs(step: RouterStep, slots: dict[str, Any]) -> dict[str, Any] | None:
+    """Translate a generic {query, num_results} step into engine-native params.
+
+    Most engines take ``query``; the exceptions are handled explicitly:
+    flights needs IATA codes (resolved from slots), hotels needs dates,
+    trends takes no ``num_results``, and only search/jobs/shopping/news/
+    events accept ``location``. Returns ``None`` when a required parameter
+    cannot be resolved (caller records a graceful skip, not a crash).
+    """
+    n = max(1, min(step.num_results, 10))
+    if step.engine == "google_flights":
+        origin = resolve_airport(slots.get("origin")) or resolve_airport(step.query)
+        dest = resolve_airport(slots.get("destination"))
+        if not dest:
+            # Try "X to Y" inside the step query as a last resort.
+            parts = re.split(r"\bto\b", step.query, maxsplit=1, flags=re.I)
+            if len(parts) == 2:
+                origin = origin or resolve_airport(parts[0])
+                dest = resolve_airport(parts[1])
+        if not origin or not dest:
+            return None
+        kwargs: dict[str, Any] = {
+            "departure_id": origin,
+            "arrival_id": dest,
+            "num_results": n,
+        }
+        dates = slots.get("dates") or ""
+        explicit_return = slots.get("return_date")
+        if explicit_return:
+            kwargs["outbound_date"] = parse_trip_dates(str(dates))[0] if dates else ""
+            kwargs["return_date"] = str(explicit_return)[:10]
+            kwargs["trip_type"] = "1"
+        elif dates:
+            outbound, ret = flight_dates(str(dates))
+            kwargs["outbound_date"] = outbound
+            if ret:
+                kwargs["return_date"] = ret
+                kwargs["trip_type"] = "1"
+            else:
+                kwargs["trip_type"] = "2"  # one-way: no invented return leg
+        else:
+            kwargs["trip_type"] = "2"
+        if slots.get("currency"):
+            kwargs["currency"] = str(slots["currency"])[:8]
+        return kwargs
+    if step.engine == "google_hotels":
+        check_in, check_out = parse_trip_dates(slots.get("dates"))
+        kwargs = {
+            "query": step.query,
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "num_results": n,
+        }
+        if slots.get("currency"):
+            kwargs["currency"] = str(slots["currency"])[:8]
+        return kwargs
+    if step.engine == "google_trends":
+        kwargs = {"query": step.query}
+        if step.location:
+            kwargs["geo"] = step.location
+        return kwargs
+    kwargs = {"query": step.query, "num_results": n}
+    if step.location and step.engine in (
+        "google_search", "google_jobs", "google_shopping", "google_news", "google_events",
+    ):
+        kwargs["location"] = step.location
+    return kwargs
 
 
 def execute_plan(plan: RouterPlan, budget: BudgetLimits | None = None) -> tuple[list[dict[str, Any]], RunTrace]:
@@ -290,6 +422,7 @@ def execute_plan(plan: RouterPlan, budget: BudgetLimits | None = None) -> tuple[
     budget = budget or BudgetLimits(max_serpapi_calls=5)
     trace = RunTrace()
     tracker = BudgetTracker(budget)
+    slots = getattr(plan, "slots", None) or {}
     outputs: list[dict[str, Any]] = []
     for step in plan.steps[:3]:
         try:
@@ -297,11 +430,20 @@ def execute_plan(plan: RouterPlan, budget: BudgetLimits | None = None) -> tuple[
         except Exception:
             break
         started = time.monotonic()
+        kwargs = _invoke_kwargs(step, slots)
+        if kwargs is None:
+            trace.add(
+                ToolCallRecord(
+                    tool=step.engine,
+                    query=step.query[:120],
+                    latency_ms=(time.monotonic() - started) * 1000.0,
+                    error="Skipped: needs origin and destination airports.",
+                )
+            )
+            outputs.append({"engine": step.engine, "results": [], "evidence": [], "error": "needs origin/destination"})
+            continue
         try:
             tool = TOOL_FACTORIES[step.engine]()
-            kwargs: dict[str, Any] = {"query": step.query, "num_results": step.num_results}
-            if step.location:
-                kwargs["location"] = step.location
             out = tool.invoke(**kwargs)
             if not isinstance(out, dict):
                 raise TypeError(f"Unexpected tool result: {type(out).__name__}")
@@ -377,10 +519,10 @@ def _reorder(results: list[dict], order: list[int]) -> list[dict]:
     return [results[i] for i in order if 0 <= i < len(results)]
 
 
-def build_presentation(
+def _shape_presentation(
     plan: RouterPlan, tool_outputs: list[dict[str, Any]], ranking: dict[str, Any]
 ) -> dict[str, Any]:
-    """Shape ranked results into the per-use-case UI payload (no actions)."""
+    """Shape ranked results into the per-use-case UI payload (pre-actions)."""
     flat: list[dict[str, Any]] = []
     for out in tool_outputs:
         for r in out.get("results", []) or []:
@@ -499,6 +641,22 @@ def build_presentation(
     return {"type": "generic", "results": ranked[:10], "summary": ranking.get("summary", "")}
 
 
+def build_presentation(
+    plan: RouterPlan,
+    tool_outputs: list[dict[str, Any]],
+    ranking: dict[str, Any],
+    slots: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Shape ranked results, then attach one outbound action per pick.
+
+    Actions are read-only handoffs ("Book ticket" opens the provider
+    site). ``slots`` defaults to the plan's extracted slots and feeds
+    fallback provider-search URLs when a result has no direct link.
+    """
+    shaped = _shape_presentation(plan, tool_outputs, ranking)
+    return attach_actions(shaped, plan.use_case, slots if slots is not None else plan.slots)
+
+
 def _confidence(total: int, errors: int) -> str:
     if total >= 8 and errors == 0:
         return "high"
@@ -526,6 +684,8 @@ def run_agent(
             "model": resolve_model(),
             "classification": plan.to_dict(),
             "clarifying_question": plan.clarifying_question,
+            "slots": plan.slots,
+            "missing_slots": plan.missing_slots,
         }
     constraints = constraints or {}
     for step in plan.steps:
@@ -605,6 +765,8 @@ def run_agent(
         "classification": plan.to_dict(),
         "legacy_intents": legacy.intent,
         "constraints": constraints,
+        "slots": plan.slots,
+        "missing_slots": plan.missing_slots,
         "presentation": presentation,
         "sources": sources,
         "results_count": len(agent_results),

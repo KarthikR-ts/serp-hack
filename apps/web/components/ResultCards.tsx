@@ -5,6 +5,7 @@ import { ArrowSquareOut } from "@phosphor-icons/react";
 import type { ApiResult, WhyItem } from "../lib/types";
 import { safeHttp, safeImg } from "../lib/api";
 import { fmtDate, fmtInt, fmtViews } from "../lib/format";
+import { ActionButton } from "./ActionButton";
 import { Reveal } from "./Reveal";
 
 function Outbound({ r }: { r: ApiResult }) {
@@ -67,7 +68,7 @@ function CardActions({ r, index, onSelect, onDismiss, onSave }: {
 }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]">
-      <Outbound r={r} />
+      {r.action?.url ? <ActionButton action={r.action} compact /> : <Outbound r={r} />}
       {onSelect && (
         <label className="inline-flex min-h-[32px] cursor-pointer items-center gap-1.5 text-[var(--ink-2)]">
           <input type="checkbox" aria-label="Select for compare" className="h-4 w-4 accent-[var(--accent)]"

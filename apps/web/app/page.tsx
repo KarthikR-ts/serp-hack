@@ -13,6 +13,7 @@ import { Composer } from "../components/Composer";
 import { RouteMap } from "../components/RouteMap";
 import { EvidenceMargin } from "../components/EvidenceMargin";
 import { CommandPalette } from "../components/CommandPalette";
+import { SlotPrompt } from "../components/SlotPrompt";
 import {
   ClarifyCard, CompareTray, ConfidenceLine, EmptyResults, ErrorPanel, PlanCard, SkeletonRun,
 } from "../components/States";
@@ -372,10 +373,20 @@ export default function Workspace() {
               )}
               <AnswerBlock data={data} onRetry={() => startRun(data.query, run!.kind)} />
               {(run!.kind === "agent" && (data as AgentResponse).status === "clarify") ? (
-                <ClarifyCard
-                  question={(data as AgentResponse).clarifying_question || "Could you add detail?"}
-                  onSkip={() => startRun(data.query, "chat", "auto", false, filters)}
-                />
+                ((data as AgentResponse).missing_slots?.length) ? (
+                  <SlotPrompt
+                    question={(data as AgentResponse).clarifying_question || "Could you add detail?"}
+                    missing={(data as AgentResponse).missing_slots || []}
+                    known={(data as AgentResponse).slots || {}}
+                    onSubmit={(slots) => startRun(data.query, "agent", mode, false, { ...filters, ...slots })}
+                    onSkip={() => startRun(data.query, "chat", "auto", false, filters)}
+                  />
+                ) : (
+                  <ClarifyCard
+                    question={(data as AgentResponse).clarifying_question || "Could you add detail?"}
+                    onSkip={() => startRun(data.query, "chat", "auto", false, filters)}
+                  />
+                )
               ) : (data as AgentResponse).presentation ? (
                 <PresentationView
                   pres={(data as AgentResponse).presentation!}

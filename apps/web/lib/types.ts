@@ -16,6 +16,19 @@ export interface RouteLine {
 
 export interface WhyItem { criterion: string; met: boolean; text: string; }
 
+/** Agentic handoff: one outbound button per pick. Read-only — the
+ *  transaction happens on the provider site, never in this app. */
+export interface Action {
+  id: string;
+  kind: "book_flight" | "book_hotel" | "buy" | "apply" | "watch" | "read" | "directions" | "tickets" | "open" | string;
+  label: string;
+  url: string;
+  external: boolean;
+  result_ref?: number;
+  provider?: string;
+  note?: string;
+}
+
 export interface ApiResult {
   title?: string; name?: string;
   url?: string; application_url?: string; link?: string;
@@ -31,6 +44,7 @@ export interface ApiResult {
   airline?: string; symbol?: string; stock_name?: string;
   address?: string; availability?: string;
   why?: WhyItem[]; evidence_ids?: string[];
+  action?: Action | null;
   set_aside_reason?: string; _engine?: string;
   [key: string]: unknown;
 }
@@ -84,7 +98,7 @@ export interface AgentPresentation {
   papers?: ApiResult[];
   flights?: ApiResult[]; hotels?: ApiResult[]; places?: ApiResult[];
   note?: string; jobs?: ApiResult[]; results?: ApiResult[];
-  goal?: string;
+  goal?: string; actions?: Action[];
   stages?: { stage: string; topics: { title: string; url: string }[] }[];
 }
 
@@ -99,6 +113,8 @@ export interface AgentResponse {
   };
   legacy_intents?: string[];
   clarifying_question?: string;
+  slots?: Record<string, string>;
+  missing_slots?: string[];
   presentation?: AgentPresentation;
   sources?: ApiSource[]; results_count?: number;
   funnel?: Funnel; route?: RouteLine[];

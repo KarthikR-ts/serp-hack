@@ -69,6 +69,7 @@ class SerpApiGoogleFlights(SerpApiComponentBase):
         arrival_id: str = "LAX",
         outbound_date: str | None = None,
         return_date: str | None = None,
+        trip_type: str | None = None,
         num_results: int = 10,
         currency: str | None = None,
     ) -> dict[str, Any]:
@@ -84,6 +85,8 @@ class SerpApiGoogleFlights(SerpApiComponentBase):
             params["outbound_date"] = outbound_date
         if return_date:
             params["return_date"] = return_date
+        if trip_type in ("1", "2"):
+            params["type"] = trip_type
         raw = self._get_client().search("google_flights", **params)
         return self._normalize(raw, num_results)
 
@@ -94,12 +97,15 @@ class SerpApiGoogleFlights(SerpApiComponentBase):
         arrival_id: str = "LAX",
         outbound_date: str | None = None,
         return_date: str | None = None,
+        trip_type: str | None = None,
         num_results: int = 10,
         currency: str | None = None,
     ) -> dict[str, Any]:
         import asyncio
 
-        return await asyncio.to_thread(self.run, departure_id, arrival_id, outbound_date, return_date, num_results, currency)
+        return await asyncio.to_thread(
+            self.run, departure_id, arrival_id, outbound_date, return_date, trip_type, num_results, currency
+        )
 
     def _normalize(self, raw: dict[str, Any], num_results: int) -> dict[str, Any]:
         best = raw.get("best_flights") or raw.get("other_flights") or []

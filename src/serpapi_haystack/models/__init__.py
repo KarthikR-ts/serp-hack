@@ -1,3 +1,10 @@
+from .actions import (
+    Action,
+    action_for_result,
+    attach_actions,
+    is_safe_url,
+    primary_url,
+)
 from .results import (
     EventResult,
     Evidence,
@@ -18,6 +25,11 @@ from .results import (
 )
 
 __all__ = [
+    "Action",
+    "action_for_result",
+    "attach_actions",
+    "is_safe_url",
+    "primary_url",
     "SearchResult",
     "JobResult",
     "ProductResult",

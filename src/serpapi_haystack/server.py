@@ -36,6 +36,7 @@ from serpapi_haystack.agents.intents import QueryAnalysis, classify_query
 from serpapi_haystack.agents.llm_router import LLMKeyMissing
 from serpapi_haystack.agents.llm_router import run_agent as run_llm_agent
 from serpapi_haystack.agents.universal import build_plan, synthesis_input
+from serpapi_haystack.models.actions import action_for_result
 from serpapi_haystack.utils.presentation import (
     apply_funnel,
     attach_evidence,
@@ -323,8 +324,9 @@ def _enrich_outputs(
     constraints: dict[str, Any],
     budget: BudgetLimits,
     started: float,
+    use_case: str = "",
 ) -> dict[str, Any]:
-    """Shared enrichment: funnel, why, route, confidence, completeness, links."""
+    """Shared enrichment: funnel, why, route, confidence, completeness, links, actions."""
     import time as _time
 
     flat = []
@@ -338,6 +340,12 @@ def _enrich_outputs(
         r["why"] = why_for(r, constraints or {}, i, len(matched))
     evidence = [e for out in tool_outputs for e in (out.get("evidence", []) or [])]
     linked_results, linked_evidence = attach_evidence(matched[:30], evidence[:30])
+    # Agentic handoff: one outbound action per result (read-only, opens provider site).
+    top_actions: list[dict[str, Any]] = []
+    for i, r in enumerate(linked_results):
+        action = action_for_result(r, use_case, i, constraints or {})
+        r["action"] = action.to_dict()
+        top_actions.append(action.to_dict())
     sources = [
         {
             "id": e.get("id", ""),
@@ -362,6 +370,7 @@ def _enrich_outputs(
     return {
         "results": linked_results,
         "results_count": len(matched),
+        "actions": top_actions,
         "evidence": linked_evidence,
         "evidence_count": len(linked_evidence),
         "sources": sources,
@@ -417,7 +426,10 @@ def _run_chat(
     tool_outputs, trace = execute_tools(toolset, query, num_results, budget)
     trace.intent = analysis.intent
     trace.tools_selected = tool_names
-    enriched = _enrich_outputs(tool_outputs, tool_names, trace, constraints, budget, started)
+    enriched = _enrich_outputs(
+        tool_outputs, tool_names, trace, constraints, budget, started,
+        (analysis.intent or ["GENERAL_RESEARCH"])[0].lower(),
+    )
     use_case = (analysis.intent or ["GENERAL_RESEARCH"])[0].lower()
     record_usage(
         queries=1,

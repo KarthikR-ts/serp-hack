@@ -106,24 +106,30 @@ class SerpApiClient:
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
-    def search(self, engine: str, q: str, query_param: str = "q", **params: Any) -> dict[str, Any]:
+    def search(self, engine: str, q: str = "", query_param: str = "q", **params: Any) -> dict[str, Any]:
         """Execute a SerpApi search for any engine.
 
         :param engine: SerpApi engine, e.g. ``google``, ``google_jobs``,
             ``google_shopping``, ``youtube``.
-        :param q: query string (must be non-empty).
+        :param q: query string. Required by query-based engines; engines
+            with native parameters (e.g. ``google_flights`` with
+            ``departure_id``/``arrival_id``) omit it.
         :param query_param: name of the query parameter. Most engines use
             ``q``; YouTube uses ``search_query`` (per SerpApi docs).
         :param params: extra SerpApi parameters (location, hl, gl, num, ...).
         :returns: parsed JSON dict from SerpApi.
         :raises SerpApiError: normalized error hierarchy.
         """
-        if not q or not str(q).strip():
+        if q is None:
+            q = ""
+        if q != "" and not str(q).strip():
             raise SerpApiBadRequestError("Query 'q' must be a non-empty string.")
         if engine not in SUPPORTED_ENGINES:
             logger.warning("Engine '%s' is not in supported set %s.", engine, SUPPORTED_ENGINES)
         request_id = uuid.uuid4().hex[:12]
-        payload: dict[str, Any] = {"engine": engine, query_param: q.strip(), "api_key": self.api_key, **params}
+        payload: dict[str, Any] = {"engine": engine, "api_key": self.api_key, **params}
+        if str(q).strip():
+            payload[query_param] = q.strip()
         cache_key = self._cache_key(engine, q, params)
         if self.cache is not None:
             try:

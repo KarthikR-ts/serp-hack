@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MagnifyingGlass } from "@phosphor-icons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
@@ -15,10 +15,27 @@ export function CommandPalette({
 }) {
   const [q, setQ] = useState("");
   const reduce = useReducedMotion();
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (open) setQ("");
+    if (open) {
+      setQ("");
+      // Focus the input on open so Esc/Enter work immediately.
+      const t = setTimeout(() => inputRef.current?.focus(), 30);
+      return () => clearTimeout(t);
+    }
   }, [open ]);
+
+  // Self-sufficient Esc handling: works regardless of which element has
+  // focus (capture phase, so nothing can swallow it first).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, onClose]);
 
   const hits = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -45,7 +62,7 @@ export function CommandPalette({
             <div className="flex items-center gap-2 border-b border-[var(--line)] p-3.5 text-[var(--ink-3)]">
               <MagnifyingGlass size={16} />
               <input
-                autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+                autoFocus ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     const v = q.trim();
@@ -60,6 +77,12 @@ export function CommandPalette({
                 className="w-full bg-transparent text-[15px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
               />
               <kbd className="rounded-md border border-[var(--line)] px-1.5 font-mono text-[10.5px]">esc</kbd>
+              <button
+                type="button" onClick={onClose} aria-label="Close command palette"
+                className="grid h-7 w-7 flex-none place-items-center rounded-full text-[var(--ink-3)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+              >
+                ✕
+              </button>
             </div>
             <div role="listbox" aria-label="Commands" className="max-h-[52dvh] overflow-auto p-1.5">
               {hits.map((c) => (
