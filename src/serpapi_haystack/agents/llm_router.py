@@ -33,6 +33,7 @@ except ImportError:
 from .intents import (
     INTENT_TOOLS,
     _BUDGET_RE,
+    _FINANCE_RE,
     _FLIGHT_RE,
     _HOTEL_RE,
     _LEARN_RE,
@@ -409,7 +410,8 @@ def _enforce_hard_rules(query: str, plan: RouterPlan) -> RouterPlan:
         plan.reasoning = (plan.reasoning + " [rule: travel-booking -> travel]").strip()
         # Fall through to generic backfill below (no early return): travel
         # queries still need maps/search steps when the LLM under-plans.
-    buy_signal = bool(_SHOP_RE.search(q) or _BUDGET_RE.search(q) or "$" in q or "₹" in q)
+    is_finance = bool(_FINANCE_RE.search(q))
+    buy_signal = bool((_SHOP_RE.search(q) or _BUDGET_RE.search(q) or "$" in q or "₹" in q) and not is_finance)
     if buy_signal and not is_travel and "google_shopping" not in engines:
         plan.steps.insert(0, RouterStep(engine="google_shopping", query=q.strip()[:300] or q))
         if plan.use_case == "research":
@@ -637,6 +639,37 @@ def classify_with_llm(query: str, complete: CompleteFn | None = None) -> RouterP
     plan.reasoning = str(parsed.get("reasoning", ""))[:300]
     plan.tasks = _parse_tasks(parsed, query, plan)
     return _enforce_hard_rules(query, plan)
+
+
+def classify_request(
+    query: str,
+    complete: CompleteFn | None = None,
+    backend: Literal["llm", "laya", "hybrid"] | None = None,
+) -> RouterPlan:
+    """Classify user request using configured backend (default 'laya')."""
+    # Allow explicit complete mock in tests when backend is not explicitly requested
+    if complete is not None and backend is None:
+        return classify_with_llm(query, complete=complete)
+
+    chosen_backend = (backend or os.getenv("ROUTER_BACKEND", "laya")).strip().lower()
+    if chosen_backend == "llm":
+        return classify_with_llm(query, complete=complete)
+    elif chosen_backend == "hybrid":
+        try:
+            from .laya_router import classify_with_laya
+            laya_plan = classify_with_laya(query)
+            if laya_plan.confidence in ("high", "medium") and not laya_plan.tasks:
+                return laya_plan
+        except Exception:
+            pass
+        return classify_with_llm(query, complete=complete)
+    else:  # default: 'laya'
+        try:
+            from .laya_router import classify_with_laya
+            return classify_with_laya(query)
+        except Exception:
+            return classify_with_llm(query, complete=complete)
+
 
 
 def _invoke_kwargs(step: RouterStep, slots: dict[str, Any]) -> dict[str, Any] | None:
@@ -1442,7 +1475,7 @@ def _agent_events(
 
     started = _time.monotonic()
     resolve_llm_key()  # fail fast with a clear error when unconfigured
-    plan = classify_with_llm(query, complete=complete)
+    plan = classify_request(query, complete=complete)
     # Runtime-provided slots (SlotPrompt answers, filters) always merge into
     # the plan: engine kwargs (flights IATA, hotel dates) resolve from these.
     # Nice-to-have prefs (budget, party size...) never block: the runner
