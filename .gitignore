@@ -19,3 +19,4 @@ serpapi_haystack_universal_web_intelligence_prd.md
 *.prd.md
 # Local spec, never track
 ruleset.md
+UI_RULES/

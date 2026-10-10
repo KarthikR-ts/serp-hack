@@ -62,3 +62,9 @@ Open http://localhost:3000 — **Research** uses the instant regex router, **Age
 This codebase is structured for dual compatibility:
 1. **Upstream PR (`haystack-core-integrations`)**: The components in `src/serpapi_haystack/` map 1-to-1 with deepset's standard integration specification and can be upstreamed directly.
 2. **Standalone PyPI Package (`serpapi-haystack`)**: Installable as a standalone Python library and executable API server.
+
+## Local-only files (never committed)
+
+- `UI_RULES/` — route-and-margin workspace design spec the UI follows. Untracked by design.
+- `ruleset.md` — product requirements reference. Untracked by design.
+- `.env` — your keys. Only `.env.example` is committed.
