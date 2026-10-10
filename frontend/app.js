@@ -38,7 +38,12 @@ $("#heroTime").textContent = timeNow();
 
 /* ---------- theme ---------- */
 const root = document.documentElement;
-try { const s = localStorage.getItem("serp_theme"); if (s) root.dataset.theme = s; } catch {}
+try {
+  const s = localStorage.getItem("serp_theme");
+  if (s === "light" || s === "dark") { root.dataset.theme = s; }
+  else if (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) { root.dataset.theme = "dark"; }
+  else { root.dataset.theme = "light"; }
+} catch {}
 $("#themeBtn").addEventListener("click", () => {
   const cur = root.dataset.theme || "dark";
   const next = cur === "dark" ? "light" : "dark";

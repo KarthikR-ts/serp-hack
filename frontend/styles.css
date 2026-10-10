@@ -1,39 +1,39 @@
-/* Serp Intelligence — "Research Desk" design system.
-   Reading: AI research workspace for deliberate readers. Calm ink surfaces,
-   one signature graphic (the Route pipeline), editorial serif for verdicts.
-   Tokens in OKLCH-leaning hex pairs. No gradients as decoration. */
+/* Intellect Engine — Literate Intelligence Workspace (Stitch exact tokens). */
 
 :root{
-  --bg:#F4F5F6; --bg-soft:#ECEEF0; --surface:#FFFFFF; --surface-2:#F8F9FA;
-  --ink:#101725; --ink-2:#47536A; --ink-3:#6B768C;
-  --line:#DFE3E9; --line-soft:#EBEEF2; --control:#9AA4B5;
-  --mark:#FDEFB2;
-  --accent:#101725; --accent-ink:#FFFFFF;
-  --live:#16A34A;
-  --fam-web:#2563EB; --fam-research:#7C3AED; --fam-live:#C2410C;
-  --fam-career:#0E7A5F; --fam-commerce:#9A6200; --fam-place:#0E7490;
-  --error:#B42318; --caution:#8A5A00; --success:#0B6B47;
-  --focus:#1D4ED8;
-  --font-ui:"Space Grotesk",ui-sans-serif,system-ui,"Noto Sans","Noto Sans Devanagari",sans-serif;
-  --font-read:"Newsreader",Georgia,"Noto Serif","Noto Serif Devanagari",serif;
-  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --bg:#F7FAFC; --bg-soft:#EBEEF0; --surface:#FFFFFF; --surface-2:#EBEEF0;
+  --ink:#181C1E; --ink-2:#43474E; --ink-3:#74777E;
+  --line:#C9D3DD; --line-soft:#E5E9EB; --control:#74869B;
+  --mark:#FBE9A6;
+  --accent:#17304F; --accent-ink:#FFFFFF;
+  --live:#0B6B47;
+  --fam-web:#0B64B0; --fam-research:#8A3FA0; --fam-live:#C2410C;
+  --fam-career:#0B7A56; --fam-commerce:#9A6200; --fam-place:#0E7490;
+  --error:#BA1A1A; --caution:#8A5A00; --success:#0B6B47;
+  --focus:#0B64B0;
+  --font-ui:"Schibsted Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --font-read:"Literata",Georgia,serif;
+  --font-mono:"Schibsted Grotesk",ui-monospace,monospace;
   --ease:cubic-bezier(.23,1,.32,1);
-  --r-sm:8px; --r-md:14px; --r-lg:18px; --r-pill:999px;
-  --shadow-float:0 12px 32px rgba(16,23,37,.14);
-  --cmd-h:56px; --rail-w:264px; --insp-w:336px;
+  --r-sm:2px; --r-md:6px; --r-lg:8px; --r-xl:12px; --r-pill:999px;
+  --shadow-float:0 8px 24px rgba(23,48,79,.16);
+  --shadow-sm:0 1px 8px rgba(0,0,0,.04);
+  --cmd-h:64px; --rail-w:248px; --insp-w:320px;
+  --measure:66ch;
 }
+/* Stitch is LIGHT only. Dark intentionally maps to same paper/fog/harbour. */
 :root[data-theme="dark"]{
-  --bg:#0A0E14; --bg-soft:#0D131C; --surface:#101724; --surface-2:#151E2E;
-  --ink:#E8EDF3; --ink-2:#A4B0C4; --ink-3:#7E8CA3;
-  --line:#1F2A3D; --line-soft:#16202F; --control:#5B6B85;
-  --mark:#3D3512;
-  --accent:#E8EDF3; --accent-ink:#0A0E14;
-  --live:#4ADE80;
-  --fam-web:#6EA8FE; --fam-research:#C4A5FD; --fam-live:#FB8F5E;
-  --fam-career:#4FC79B; --fam-commerce:#E0A83A; --fam-place:#5BC8E0;
-  --error:#FF8A80; --caution:#F2C14E; --success:#5FD3A5;
-  --focus:#8FB6FF;
-  --shadow-float:0 16px 40px rgba(0,0,0,.5);
+  --bg:#F7FAFC; --bg-soft:#EBEEF0; --surface:#FFFFFF; --surface-2:#EBEEF0;
+  --ink:#181C1E; --ink-2:#43474E; --ink-3:#74777E;
+  --line:#C9D3DD; --line-soft:#E5E9EB; --control:#74869B;
+  --mark:#FBE9A6;
+  --accent:#17304F; --accent-ink:#FFFFFF;
+  --live:#0B6B47;
+  --fam-web:#0B64B0; --fam-research:#8A3FA0; --fam-live:#C2410C;
+  --fam-career:#0B7A56; --fam-commerce:#9A6200; --fam-place:#0E7490;
+  --error:#BA1A1A; --caution:#8A5A00; --success:#0B6B47;
+  --focus:#0B64B0;
+  --shadow-float:0 8px 24px rgba(23,48,79,.16);
 }
 *{box-sizing:border-box}
 html{scroll-padding-top:72px;-webkit-text-size-adjust:100%}
@@ -420,3 +420,39 @@ kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line);bor
   *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
   .statuspill .pulse,.livebadge-dot{animation:none}
 }
+
+/* Stitch evidence grammar + reading measure (exact) */
+.verdict-text,.narrative{font-family:var(--font-read);font-size:17px;line-height:28px;max-width:66ch;text-align:left}
+.fact{text-decoration:underline solid color-mix(in srgb,#74869B 50%,transparent);text-decoration-thickness:1px;text-underline-offset:3px}
+.inference{text-decoration:underline dashed #74869B;text-decoration-thickness:1px;text-underline-offset:3px}
+.uncertain{text-decoration:underline dotted #74869B;text-decoration-thickness:1px;text-underline-offset:3px}
+.recommendation{border-left:3px solid #17304F;padding-left:12px}
+.needle,.rcard.flash,.srclist li.flash{background:#FBE9A6;border-radius:2px}
+.run,.route,.completeness,.plan,.banner,.ops-card,.srclist li,.goal,.tile{border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.04)}
+.sendbtn,.newbtn,.btn.solid{background:#17304F;border-color:#17304F;color:#fff}
+.shell{max-width:1340px}
+
+/* ══ REAL DARK EDITORIAL (appended override; light default above untouched) ══ */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0E1A2A; --bg-soft:#0B1522; --surface:#15263B; --surface-2:#1A2C42;
+  --ink:#E6EDF4; --ink-2:#A5B5C6; --ink-3:#7C8DA1;
+  --line:#2A3E56; --line-soft:#1E3247; --control:#7C8DA1;
+  --mark:#4A3F12;
+  --accent:#7FB8F5; --accent-ink:#0B1A2C;
+  --live:#3FA97C;
+  --fam-web:#6FADE6; --fam-research:#C48FD6; --fam-live:#E08A4C;
+  --fam-career:#3FA97C; --fam-commerce:#D9A441; --fam-place:#4FB3D1;
+  --error:#E07A7A; --caution:#C99A2E; --success:#3FA97C;
+  --focus:#7FB8F5;
+  --shadow-float:0 8px 24px rgba(0,0,0,.5);
+  --shadow-sm:0 1px 8px rgba(0,0,0,.35);
+}
+:root[data-theme="dark"] .sendbtn,
+:root[data-theme="dark"] .newbtn,
+:root[data-theme="dark"] .btn.solid{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+:root[data-theme="dark"] .sendbtn-arrow,
+:root[data-theme="dark"] .goal-hero .goal-ico{background:color-mix(in srgb,var(--accent-ink) 14%,transparent);color:var(--accent-ink)}
+:root[data-theme="dark"] .needle,
+:root[data-theme="dark"] .rcard.flash,
+:root[data-theme="dark"] .srclist li.flash{background:var(--mark)}

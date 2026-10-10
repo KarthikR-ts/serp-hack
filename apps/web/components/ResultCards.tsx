@@ -92,8 +92,8 @@ function CardActions({ r, index, onSelect, onDismiss, onSave }: {
 
 function KindTag({ label, family }: { label: string; family: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-wide text-[var(--ink-2)]">
-      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full" style={{ background: `var(--fam-${family})` }} />
+    <span className="inline-flex items-center gap-1.5 rounded bg-[var(--surface-low)] px-2 py-0.5 text-[12px] font-semibold" style={{ color: `var(--fam-${family})` }}>
+      <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: `var(--fam-${family})` }} />
       {label}
     </span>
   );
@@ -142,7 +142,7 @@ export function ProductTile({ r, index, featured, ...rest }: {
           t.style.setProperty("--mx", `${e.clientX - rect.left}px`);
           t.style.setProperty("--my", `${e.clientY - rect.top}px`);
         }}
-        className={`spot surface overflow-hidden !rounded-[14px] ${featured ? "!border-[var(--ink)]" : ""}`}
+        className={`rounded-[12px] border border-[var(--line)] bg-[var(--paper)] shadow-sm overflow-hidden ${featured ? "!border-[var(--primary-container)]" : ""}`}
         data-vertical="google_shopping" data-eids={(r.evidence_ids || []).join(" ")}
       >
         {url && img && (
@@ -152,10 +152,10 @@ export function ProductTile({ r, index, featured, ...rest }: {
               loading="lazy" className="h-full w-full object-cover" />
           </a>
         )}
-        <div className="flex flex-col gap-1 p-3">
+        <div className="flex flex-col gap-1 p-4">
           {featured && (
-            <span className="self-start rounded-md bg-[var(--accent)] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-[var(--accent-ink)]">
-              Top pick
+            <span className="self-start rounded bg-[var(--primary-container)] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+              Primary pick · Best match
             </span>
           )}
           <h3 className="text-[15px] font-semibold tracking-tight">{String(r.title || "Product").slice(0, 110)}</h3>

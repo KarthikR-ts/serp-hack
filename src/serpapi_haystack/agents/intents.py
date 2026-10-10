@@ -53,7 +53,7 @@ INTENT_TOOLS: dict[str, list[str]] = {
     "JOB_SEARCH": ["google_jobs", "google_search"],
     "COMPANY_RESEARCH": ["google_search", "google_news", "google_finance"],
     "FINANCE": ["google_finance", "google_trends", "google_news", "google_search"],
-    "TRAVEL": ["google_flights", "google_hotels", "google_maps", "google_events", "google_search"],
+    "TRAVEL": ["google_maps", "google_search", "google_flights", "google_hotels", "google_events"],
     "LOCAL_DISCOVERY": ["google_maps", "google_events", "google_search"],
     "EVENTS": ["google_events", "google_search"],
     "TREND_ANALYSIS": ["google_trends", "google_search", "google_news"],
@@ -82,7 +82,7 @@ _SHOP_RE = re.compile(
 )
 _BUDGET_RE = re.compile(r"(?:under|below|budget|max)\s*[₹$€£]?\s*([\d,]+)", re.I)
 _COMPARE_RE = re.compile(r"\b(compare|comparison|vs\.?|versus|better|best|which (one|is))\b", re.I)
-_LEARN_RE = re.compile(r"\b(learn|teach|course|tutorial|roadmap|learning path|beginner|explain)\b", re.I)
+_LEARN_RE = re.compile(r"\b(learn|teach|course|tutorial|roadmap|learning path|beginner|explain|explainer|explainers|guide|guides|intro|primer)\b", re.I)
 _SCHOLAR_RE = re.compile(r"\b(paper|papers|arxiv|journal|citation|citations|doi|literature|academic|researcher|study)\b", re.I)
 _PATENT_RE = re.compile(r"\b(patent|patents|prior art|invention|claims|assignee|uspto)\b", re.I)
 _NEWS_RE = re.compile(r"\b(news|headline|headlines|breaking|latest news|announcement|press release)\b", re.I)
@@ -183,7 +183,182 @@ def classify_query(query: str) -> QueryAnalysis:
     )
 
 
-def classify_query_llm(query: str, generator: Any = None) -> QueryAnalysis:
+# Clause separators for multi-task decomposition: "A and also B", "A plus B",
+# "A as well as B", "A; B", "A? then B", "A and B", "A then B".
+_SPLIT_RE = re.compile(
+    r"\s*(?:\band\s+also\b|\bas\s+well\s+as\b|\bplus\b|\bthen\b|;\s*|\?+\s*(?:then|also|and)\b|\band\b)\s*",
+    re.I,
+)
+
+_GENERAL_FAMILY = ("GENERAL_RESEARCH",)
+
+# Video-mention signal shared with the LLM router: a clause asking for
+# videos means the youtube engine, even without learn-words.
+_VIDEO_MENTION_RE = re.compile(r"\b(video|videos|youtube|youtu\.be|vlog|webinar|talk|course videos)\b", re.I)
+
+# Filler stripped from clause edges before they become sub-queries.
+_FILLER_HEAD_RE = re.compile(r"^(?:and|or|plus|then|also|as well as)\b[\s,;:]*", re.I)
+_FILLER_TAIL_RE = re.compile(r"[\s,;:.]*(?:as well|too|also|please)\s*$", re.I)
+
+# Stopwords excluded from anchor-topic extraction.
+_TOPIC_STOP = frozenset(
+    "find me the best good top get give show list all some any for of a an to and also as well too or plus then than that this those these with about on in at from into include includes including contain contains versus vs without with".split()
+)
+
+
+def _intent_family(query: str, include_video: bool = True) -> tuple[str, ...]:
+    """Primary intent family of a clause (GENERAL_RESEARCH when nothing specific)."""
+    intents = classify_query(query).intent
+    specific = tuple(sorted(i for i in intents if i != "GENERAL_RESEARCH"))
+    if include_video and _VIDEO_MENTION_RE.search(query or "") and "LEARNING" not in specific:
+        specific = tuple(sorted(specific + ("VIDEO_LEARNING",)))
+    return specific or _GENERAL_FAMILY
+
+
+# Capitalized words that are platforms/formats, not topics: they never
+# count as a clause's "own topic" for enrichment decisions.
+_PLATFORM_WORDS = frozenset(
+    "youtube youtu.be video videos vlog vlogs webinar webinars talk talks podcast podcasts "
+    "google reddit amazon flipkart twitter x instagram facebook linkedin github arxiv".split()
+)
+
+
+def _own_topic(clause: str) -> list[str]:
+    """Capitalized mid-sentence topic words of a clause (platforms excluded)."""
+    words = re.findall(r"[A-Za-z][\w.-]*", clause or "")
+    own: list[str] = []
+    for i, w in enumerate(words):
+        w = w.strip(" .,'\";:!?()")
+        if len(w) <= 2 or w.lower() in _TOPIC_STOP or w.lower() in _PLATFORM_WORDS:
+            continue
+        if w[0].isupper() and i > 0 and w not in own:
+            own.append(w)
+    return own
+
+
+def _anchor_topic(full_query: str, anchor_clause: str) -> list[str]:
+    """Topic terms that give a fragment clause its context.
+
+    Mid-sentence capitalized words first ("Bitcoin"), else anchor entities
+    ("white paper"). At most 2 terms; sentence-start words excluded.
+    """
+    words = re.findall(r"[A-Za-z][\w.-]*", anchor_clause or "")
+    topics: list[str] = []
+    for i, w in enumerate(words):
+        w = w.strip(" .,'\";:!?()")
+        if len(w) <= 2 or w.lower() in _TOPIC_STOP or w.lower() in _PLATFORM_WORDS:
+            continue
+        if w[0].isupper() and i > 0:
+            if w not in topics:
+                topics.append(w)
+        if len(topics) >= 2:
+            break
+    if not topics:
+        try:
+            ents = classify_query(anchor_clause or "").entities or []
+        except Exception:
+            ents = []
+        for e in ents:
+            e = str(e).strip(" .,'\"").strip()
+            if len(e) > 2 and e.lower() not in _TOPIC_STOP and e.lower() not in (t.lower() for t in topics):
+                topics.append(e)
+            if len(topics) >= 2:
+                break
+    return topics[:2]
+
+
+def _contextualize(clause: str, topics: list[str]) -> str:
+    """Make a fragment clause self-contained: strip filler, inject topic."""
+    c = _FILLER_HEAD_RE.sub("", (clause or "").strip(" ?;."))
+    c = _FILLER_TAIL_RE.sub("", c).strip()
+    missing = [t for t in (topics or []) if t.lower() not in c.lower()]
+    if missing and c:
+        c = f"{' '.join(missing)}: {c}"
+    return (c or clause or "").strip()[:300]
+
+
+_TASK_KIND = {
+    "ACADEMIC_RESEARCH": "Papers",
+    "TECHNICAL_RESEARCH": "Research",
+    "PATENT_RESEARCH": "Patents",
+    "VIDEO_LEARNING": "YouTube videos",
+    "LEARNING": "Learning",
+    "TRAVEL": "Trip plan",
+    "PLANNING": "Trip plan",
+    "SHOPPING": "Products",
+    "PRODUCT_COMPARISON": "Compare",
+    "PRICE_COMPARISON": "Prices",
+    "DECISION_SUPPORT": "Decision",
+    "JOB_SEARCH": "Jobs",
+    "FINANCE": "Markets",
+    "NEWS": "News",
+    "LOCAL_DISCOVERY": "Places",
+    "EVENTS": "Events",
+}
+
+
+def _task_label(query: str, index: int, topic: str = "") -> str:
+    if _VIDEO_MENTION_RE.search(query or ""):
+        kind = "YouTube videos"
+    else:
+        fam = _intent_family(query)
+        primary = fam[0] if fam != _GENERAL_FAMILY else "GENERAL_RESEARCH"
+        kind = _TASK_KIND.get(primary)
+        if kind is None:
+            words = re.findall(r"[A-Za-z][\w.-]*", query)
+            kind = " ".join(words[:4])[:40] or f"task {index + 1}"
+    label = f"{kind} · {topic}" if topic else kind
+    return label[:40]
+
+
+def split_tasks_regex(query: str) -> list[dict[str, str]]:
+    """Split a multi-intent query into at most 3 sub-task dicts.
+
+    Splits on "and also"/"and"/"plus"/"as well as"/";"/"? then|also" and
+    keeps the split only when 2+ distinct intent families are detected
+    (each clause classified via :func:`classify_query`; a clause is kept
+    when it yields a non-GENERAL intent or differs from its siblings).
+    Falls back to a single task holding the whole query.
+    """
+    q = (query or "").strip()
+    single = [{"id": "task-1", "label": _task_label(q, 0) if q else "task 1", "query": q}]
+    if not q:
+        return single
+    clauses = [c.strip(" ?;.") for c in _SPLIT_RE.split(q)]
+    clauses = [c for c in clauses if c]
+    if len(clauses) < 2:
+        return single
+    families = [_intent_family(c) for c in clauses]
+    if len(set(families)) < 2:
+        return single
+    kept = [
+        (i, c)
+        for i, (c, fam) in enumerate(zip(clauses, families))
+        if fam != _GENERAL_FAMILY or any(fam != other for j, other in enumerate(families) if j != i)
+    ]
+    if len(kept) < 2:
+        return single
+    # Context-first: the first specific clause holds the topic ("Bitcoin").
+    # Fragment clauses (GENERAL family) get it injected so every sub-query
+    # is self-contained: "Bitcoin: some good explainer YouTube videos".
+    anchor_idx = next(
+        (i for i, (_, c) in enumerate(kept) if _intent_family(c, include_video=False) != _GENERAL_FAMILY),
+        0,
+    )
+    anchor_clause = kept[anchor_idx][1]
+    topics = _anchor_topic(q, anchor_clause)
+    out = []
+    for n, (_, c) in enumerate(kept[:3]):
+        # Context-first enrichment: a clause with no topic of its own
+        # (fragment, or video ask riding on the anchor's topic) inherits the
+        # anchor's terms. Complete clauses (own topic like Goa) stay intact.
+        if n != anchor_idx and not _own_topic(c) and topics:
+            qc = _contextualize(c, topics)
+        else:
+            qc = _FILLER_TAIL_RE.sub("", _FILLER_HEAD_RE.sub("", c)).strip()[:300] or c
+        label_topic = next((t for t in topics if t.lower() in qc.lower()), "")
+        out.append({"id": f"task-{n + 1}", "label": _task_label(qc, n, label_topic), "query": qc})
+    return out
     """LLM-assisted intent classification (Phase 6 hybrid fallback)."""
     base_analysis = classify_query(query)
     if generator is None:

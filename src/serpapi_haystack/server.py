@@ -499,6 +499,107 @@ def agent_run(req: AgentRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(exc))
 
 
+def _truncate_lines(lines: Any, limit: int = 240) -> Any:
+    if isinstance(lines, list):
+        return [ln[:limit] if isinstance(ln, str) else ln for ln in lines]
+    if isinstance(lines, str):
+        return lines[:limit]
+    return lines
+
+
+def _truncate_event_data(event: str, data: Any) -> Any:
+    if event == "reasoning" and isinstance(data, dict):
+        return {k: (v[:240] if isinstance(v, str) else v) for k, v in data.items()}
+    if event == "reasoning" and isinstance(data, str):
+        return data[:240]
+    if event == "answer_complete" and isinstance(data, dict):
+        data = dict(data)
+        if "reasoning" in data:
+            data["reasoning"] = _truncate_lines(data["reasoning"])
+        cls = data.get("classification")
+        if isinstance(cls, dict) and isinstance(cls.get("reasoning"), str):
+            cls = dict(cls)
+            cls["reasoning"] = cls["reasoning"][:240]
+            data["classification"] = cls
+    return data
+
+
+@app.post("/api/agent/stream")
+def agent_stream(req: AgentRequest, request: Request) -> StreamingResponse:
+    """SSE variant of /api/agent: streams agent progress events.
+
+    Live path delegates to ``run_agent_stream`` in agents.llm_router
+    (imported lazily so this module loads while that file is mid-edit).
+    Fallback runs synchronous ``run_agent`` and synthesizes the same
+    event sequence. ``answer_complete`` carries the full agent payload.
+    Errors mid-stream are emitted as ``event: error``; the stream never hangs.
+    """
+    _check_rate(request, "chat")
+    q = sanitize_query(req.query)
+    num = req.num_results
+    filters = dict(req.filters or {})
+
+    def _sse(event: str, data: Any) -> str:
+        try:
+            body = json.dumps(data, default=str)
+        except Exception:
+            body = "{}"
+        return f"event: {event}\ndata: {body}\n\n"
+
+    def gen():  # type: ignore[no-untyped-def]
+        try:
+            try:
+                from serpapi_haystack.agents.llm_router import run_agent_stream as _stream_fn
+            except (ImportError, AttributeError):
+                _stream_fn = None  # type: ignore[assignment]
+            if _stream_fn is not None:
+                for chunk in _stream_fn(q, num, filters):
+                    if not isinstance(chunk, dict):
+                        continue
+                    ev = chunk.get("event") or "message"
+                    data = chunk.get("data", {})
+                    yield _sse(str(ev), _truncate_event_data(str(ev), data))
+                record_usage(queries=1)
+            else:
+                out = run_llm_agent(q, num_results=num, constraints=filters)
+                record_usage(queries=1)
+                if isinstance(out.get("reasoning"), (list, str)):
+                    out["reasoning"] = _truncate_lines(out["reasoning"])
+                cls = out.get("classification")
+                if isinstance(cls, dict) and isinstance(cls.get("reasoning"), str):
+                    cls["reasoning"] = cls["reasoning"][:240]
+                reasoning = out.get("reasoning")
+                if not reasoning and isinstance(cls, dict) and cls.get("reasoning"):
+                    reasoning = [cls["reasoning"]]
+                if isinstance(reasoning, str):
+                    reasoning = [reasoning]
+                for line in reasoning or []:
+                    text = line[:240] if isinstance(line, str) else line
+                    yield _sse("reasoning", {"text": text})
+                tasks = out.get("tasks") or []
+                for i, t in enumerate(tasks):
+                    if isinstance(t, dict):
+                        tid = t.get("id", i)
+                        title = t.get("title", t.get("task", t.get("name", "")))
+                        yield _sse("task_started", {"id": tid, "title": title})
+                        yield _sse("task_done", {"id": tid, "title": title, "status": t.get("status", "done")})
+                    else:
+                        yield _sse("task_started", {"id": i, "title": str(t)[:240]})
+                        yield _sse("task_done", {"id": i, "title": str(t)[:240], "status": "done"})
+                for line in out.get("route") or []:
+                    if isinstance(line, dict):
+                        yield _sse("tool_completed", line)
+                    else:
+                        yield _sse("tool_completed", {"tool": str(line)[:240]})
+                yield _sse("answer_complete", out)
+        except LLMKeyMissing as exc:
+            yield _sse("error", {"code": "NOKEY", "message": str(exc)[:200]})
+        except Exception:
+            yield _sse("error", {"code": "FAILED", "message": "Agent stream failed."})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @app.post("/api/chat/stream")
 def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     _check_rate(request, "chat")

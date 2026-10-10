@@ -9,6 +9,12 @@ import { safeHttp } from "../lib/api";
 export function ActionButton({ action, compact }: { action: Action; compact?: boolean }) {
   const url = safeHttp(action.url);
   if (!url) return null;
+  const kind = String(action.kind || "");
+  const where = `Opens ${action.provider || "provider site"}`;
+  const caption = /^buy/.test(kind) ? `${where} · purchase happens there`
+    : /^apply/.test(kind) ? `${where} · application happens there`
+    : /^(book_|tickets|directions)/.test(kind) ? `${where} · booking happens there`
+    : where;
   return (
     <span className="inline-flex flex-col gap-1">
       <a
@@ -19,7 +25,7 @@ export function ActionButton({ action, compact }: { action: Action; compact?: bo
         {action.label} <ArrowSquareOut size={15} aria-hidden="true" />
       </a>
       <span className="text-[11.5px] text-[var(--ink-3)]">
-        Opens {action.provider || "provider site"} · booking happens there
+        {caption}
       </span>
     </span>
   );

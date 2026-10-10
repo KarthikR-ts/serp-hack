@@ -102,7 +102,7 @@ export function ErrorPanel({ message, onRetry }: { message: string; onRetry: () 
   );
 }
 
-/** Compare: bottom-anchored tray + modal sheet. Motion only here (infrequent). */
+/** Stitch compare: floating bottom tray offset by 248px rail + Evidence Matrix sheet. */
 export function CompareTray({
   selected, onClear,
 }: {
@@ -124,18 +124,23 @@ export function CompareTray({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-4 z-[40] flex justify-center px-4">
-        <div className="flex max-w-[560px] items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] py-1.5 pl-4 pr-1.5 shadow-[var(--shadow-float)]">
-          <Scales size={16} aria-hidden="true" />
-          <span className="text-[13px] font-semibold">{selected.size} selected</span>
-          <span className="flex-1" />
-          <button type="button" className="btn !min-h-[34px] !py-1.5" onClick={onClear}>Clear</button>
-          <button
-            type="button" className="btn btn-primary !min-h-[34px] !py-1.5" disabled={selected.size < 2}
-            onClick={() => setOpen(true)} title={selected.size < 2 ? "Select 2 or more to compare" : "Compare"}
-          >
-            Compare
-          </button>
+      <div className="fixed inset-x-0 bottom-0 z-[40] flex justify-center px-4">
+        <div className="flex w-full max-w-[1040px] flex-col gap-2 rounded-t-[12px] border border-[var(--line)] bg-[var(--paper)]/95 px-4 py-3 shadow-[0_-4px_20px_rgba(23,48,79,0.1)] backdrop-blur-xl md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-[var(--status-success)]" />
+            <span className="text-[13px] font-bold text-[var(--primary)]">Active Matrix:</span>
+            <span className="text-[12px] text-[var(--ink-2)]">{selected.size} of 4 slot maximum</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex-1" />
+            <button type="button" className="btn !min-h-[34px] !py-1.5" onClick={onClear}>Clear All</button>
+            <button
+              type="button" className="btn btn-primary !min-h-[34px] !py-1.5" disabled={selected.size < 2}
+              onClick={() => setOpen(true)} title={selected.size < 2 ? "Select 2 or more to compare" : "Compare"}
+            >
+              Compare
+            </button>
+          </div>
         </div>
       </div>
 

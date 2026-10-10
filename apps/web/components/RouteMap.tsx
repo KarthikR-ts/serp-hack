@@ -36,7 +36,7 @@ function stateLabel(l: RouteLine): string {
   return "Waiting";
 }
 
-/** Signature graphic. DOM lanes, never color alone: glyph + label + shape. */
+/** Stitch Route: visual execution graph on paper, hairline rules, family hues only on 2px paths + chips. */
 export function RouteMap({
   route, budget, onFilter, activeVertical,
 }: {
@@ -50,24 +50,23 @@ export function RouteMap({
   const showTwin = open || autoOpen;
 
   return (
-    <section aria-label="Route" className="surface overflow-hidden !rounded-[14px]">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pt-3.5">
-        <h2 className="text-[13.5px] font-semibold">Route</h2>
+    <section aria-label="Route" className="overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--paper)] shadow-sm">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--line-soft)] px-4 py-3">
+        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${bad ? "bg-[var(--status-caution)]" : "bg-[var(--status-success)]"}`} />
+        <h2 className="text-[13px] font-semibold text-[var(--ink)]">{okN} of {route.length} sources loaded</h2>
         <span className="tnum text-[12px] text-[var(--ink-2)]">
-          {okN} of {route.length} sources{bad ? ` · ${bad} did not load` : ""}
+          {bad ? `· ${bad} didn’t load · ` : "· "}
+          {budget ? `${budget.calls_used} of ${budget.calls_limit} searches` : ""}
         </span>
-        {budget && (
-          <span className="tnum text-[12px] text-[var(--ink-3)]">
-            {budget.calls_used} of {budget.calls_limit} searches · {budget.seconds_used}s
-          </span>
-        )}
         <span className="flex-1" />
         <button
           type="button" onClick={() => setOpen((o) => !o)}
-          className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-[var(--line)] px-2.5 text-[12px] font-medium text-[var(--ink-2)]"
+          className="tnum inline-flex min-h-[30px] items-center gap-1.5 self-end rounded-[6px] px-2.5 text-[12px] font-semibold tabular-nums text-[var(--secondary)] hover:text-[var(--primary)]"
           aria-expanded={showTwin}
+          aria-label={showTwin ? "Collapse execution trace" : "Expand execution trace"}
         >
-          Details <CaretDown size={12} style={{ transform: showTwin ? "rotate(180deg)" : "none" }} />
+          {showTwin ? "Collapse trace" : "Expand trace"}
+          <CaretDown size={14} weight="bold" aria-hidden="true" style={{ transform: showTwin ? "rotate(180deg)" : "none" }} />
         </button>
       </div>
 

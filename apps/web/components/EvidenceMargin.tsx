@@ -22,7 +22,7 @@ function Quality({ type }: { type: string }) {
   );
 }
 
-/** Right inspector. Tabs: Sources / Steps / Detail. Sticky desktop, drawer mobile. */
+/** Stitch right margin: 320px scholarly marginalia, paper cards, needle highlights. */
 export function EvidenceMargin({
   sources, onFlash, funnel, budget, confidence, planSteps,
 }: {
@@ -36,8 +36,17 @@ export function EvidenceMargin({
   const [tab, setTab] = useState<"sources" | "steps" | "detail">("sources");
   return (
     <aside id="sources" aria-label="Sources and evidence" className="lg:sticky lg:top-[84px] lg:max-h-[calc(100vh-104px)] lg:overflow-auto supports-[height:100dvh]:lg:max-h-[calc(100dvh-104px)]">
-      <div className="surface overflow-hidden !rounded-[14px]">
-        <div role="tablist" aria-label="Evidence tabs" className="flex border-b border-[var(--line)] px-2 pt-2">
+      <div className="overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--paper)] shadow-sm">
+        <div className="flex items-center justify-between border-b border-[var(--line-soft)] px-4 py-3">
+          <h2 className="text-[12px] font-bold uppercase tracking-wider text-[var(--primary)]">Grounding Evidence</h2>
+          <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[12px] font-bold text-[var(--primary)]">{sources.length} Sources</span>
+        </div>
+        <div className="flex flex-wrap gap-1.5 px-4 py-2">
+          <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] font-semibold text-[var(--fam-commerce)]">Commerce</span>
+          <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] font-semibold text-[var(--fam-web)]">Web</span>
+          <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] font-semibold text-[var(--fam-research)]">Research</span>
+        </div>
+        <div role="tablist" aria-label="Evidence tabs" className="flex border-b border-[var(--line)] px-2">
           {(
             [
               ["sources", `Sources · ${sources.length}`],
@@ -65,11 +74,12 @@ export function EvidenceMargin({
                 </p>
               )}
               <ol className="m-0 list-none space-y-2 p-0">
-                {sources.map((s) => {
+                {sources.map((s, index) => {
                   const url = safeHttp(s.url);
                   return (
                     <li
-                      key={s.id || s.url} data-eid={s.id}
+                      // ids (e1..eN) repeat across combined multi-task sections — index suffix keeps keys globally unique; id+url prefix keeps identity stable.
+                      key={`${s.id}|${s.url}|${index}`} data-eid={s.id}
                       onMouseEnter={() => onFlash(s.id)} onMouseLeave={() => onFlash(null)}
                       className="rounded-[10px] border border-[var(--line)] bg-[var(--surface)] p-2.5 text-sm transition hover:border-[var(--control)]"
                     >

@@ -108,7 +108,7 @@ def parse_amount(text: Any) -> float | None:
         return None
     try:
         value = float(m.group(0))
-    except Value:  # noqa: BLE001 - malformed number, treat as unknown
+    except ValueError:  # malformed number, treat as unknown
         return None
     low = str(text).lower()
     if value < 1000 and ("lakh" in low or "lac" in low):

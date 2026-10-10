@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { ArrowRight, Sparkle, Stop } from "@phosphor-icons/react";
+import { ArrowRight, Stop } from "@phosphor-icons/react";
 
 const MODES = [
-  { id: "auto", label: "Auto" },
-  { id: "research", label: "Research" },
-  { id: "shopping", label: "Shopping" },
-  { id: "jobs", label: "Jobs" },
-  { id: "learning", label: "Learn" },
-  { id: "travel", label: "Travel" },
+  { id: "auto", label: "Auto Mode", hint: "Agent detects best vertical combination" },
+  { id: "research", label: "Pure Research", hint: "Scholarly journals & technical whitepapers" },
+  { id: "shopping", label: "Shopping", hint: "Products, specs, prices" },
+  { id: "jobs", label: "Jobs", hint: "Roles and internships" },
+  { id: "learning", label: "Learn", hint: "Courses and papers" },
+  { id: "travel", label: "Live Temporal", hint: "Strict last 24-hour real-time synthesis" },
 ] as const;
 
 export interface ComposerOpts { mode: string; deep: boolean; }
@@ -38,35 +38,46 @@ export function Composer({
     if (!value.trim() || running) return;
     fn({ mode, deep });
   };
+  const active = MODES.find((m) => m.id === mode) || MODES[0];
 
   return (
     <div className="bezel" id="composer">
-      <div className="bezel-core p-3.5 sm:p-4">
+      <div className="bezel-core p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-2)]">
+            Query Focus: <span className="text-[var(--primary)]">{active.label}</span>
+          </p>
+          <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">
+            Retrieval-mode: high-precision
+          </span>
+        </div>
         <label htmlFor="q" className="sr-only">Your question</label>
         <textarea
-          id="q" ref={ref} rows={2} maxLength={2000} value={value}
+          id="q" ref={ref} rows={3} maxLength={2000} value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(onResearch); return; }
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit(onResearch);
             }
           }}
-          placeholder="Describe what you want to find, decide or learn"
-          className="max-h-[200px] min-h-[56px] w-full resize-none border-0 bg-transparent text-[16px] leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
+          placeholder="Find three good laptops under ₹80,000 for machine learning..."
+          className="font-reading mt-3 max-h-[200px] min-h-[72px] w-full resize-none rounded-[6px] bg-[var(--surface-low)] p-4 text-[17px] leading-[28px] text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
         />
-        <p className="mt-1 text-[12px] text-[var(--ink-3)]">The assistant chooses where to look. No modes to learn.</p>
+        <p className="mt-2 text-right font-mono text-[11px] text-[var(--ink-3)]">⌘+Enter to research</p>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--line-soft)] pt-3" role="toolbar" aria-label="Research options">
-          <div className="flex flex-wrap gap-1 rounded-full border border-[var(--line)] bg-[var(--surface-2)] p-1" role="radiogroup" aria-label="Mode">
-            {MODES.map((m) => {
+        <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--line-soft)] pt-3" role="toolbar" aria-label="Research options">
+          <div className="flex flex-wrap gap-1 rounded-[6px] border border-[var(--line)] bg-[var(--surface-2)] p-1" role="radiogroup" aria-label="Mode">
+            {MODES.slice(0, 6).map((m) => {
               const on = mode === m.id;
               return (
                 <button
                   key={m.id} type="button" role="radio" aria-checked={on}
                   onClick={() => onMode(m.id)}
-                  className={`min-h-[34px] rounded-full px-3 text-[13px] font-medium transition ${
-                    on ? "bg-[var(--surface)] font-semibold text-[var(--ink)] shadow-sm ring-1 ring-[var(--line)]" : "text-[var(--ink-2)] hover:text-[var(--ink)]"
+                  title={m.hint}
+                  className={`min-h-[34px] rounded-[6px] px-3 text-[13px] font-medium transition ${
+                    on ? "bg-[var(--paper)] font-semibold text-[var(--primary)] shadow-sm" : "text-[var(--ink-2)] hover:text-[var(--primary)]"
                   }`}
                 >
                   {m.label}
@@ -80,21 +91,14 @@ export function Composer({
           <button
             type="button" aria-pressed={deep} onClick={() => onDeep(!deep)}
             title="Deep research uses more searches and cross-checks sources"
-            className={`inline-flex min-h-[40px] items-center gap-2 rounded-full border px-3 text-[13px] font-semibold transition ${
-              deep ? "border-[var(--fam-commerce)] bg-[color-mix(in_srgb,var(--fam-commerce)_10%,var(--surface-2))]" : "border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink-2)]"
+            className={`inline-flex min-h-[40px] items-center gap-2 rounded-[6px] border px-3 text-[13px] font-semibold transition ${
+              deep ? "border-[var(--primary-container)] bg-[var(--secondary-container)] text-[var(--primary)]" : "border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink-2)]"
             }`}
           >
-            <span
-              aria-hidden="true"
-              className="relative h-[18px] w-[30px] rounded-full transition"
-              style={{ background: deep ? "var(--fam-commerce)" : "var(--control)" }}
-            >
-              <span
-                className="absolute left-[2px] top-[2px] h-[14px] w-[14px] rounded-full bg-white transition-transform"
-                style={{ transform: deep ? "translateX(12px)" : "none" }}
-              />
+            Deep research
+            <span className="rounded bg-[var(--primary-container)] px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+              Depth {deep ? 3 : 1}
             </span>
-            Deep
           </button>
 
           {running ? (
@@ -112,10 +116,10 @@ export function Composer({
               </button>
               <button
                 type="button" onClick={onAgent} title="Autonomous agent: classify, call exact endpoints, rank picks"
-                className="btn group island-btn !border-[var(--line)] !bg-transparent !text-[var(--ink)]"
+                className="btn group island-btn !bg-[var(--paper)]"
                 aria-label="Run autonomous agent"
               >
-                <Sparkle size={15} /> Agent
+                Agent
               </button>
             </>
           )}

@@ -87,11 +87,107 @@ export async function streamChat(
   return events > 0;
 }
 
+export type AgentStreamEvent =
+  | { type: "reasoning"; text: string }
+  | { type: "task_started"; id: string; label: string }
+  | { type: "task_done"; id: string; label: string; count?: number }
+  | { type: "tool_started"; tool: string; query?: string }
+  | { type: "tool_completed"; tool: string; status?: string; count?: number }
+  | { type: "answer_complete"; payload: import("./types").AgentResponse }
+  | { type: "error"; code: string }
+  | { type: "progress"; stage: string; detail?: string };
+
+/** POST SSE stream for the agent path. Mirrors streamChat; resolves with
+ *  the full payload from `answer_complete`. Throws on `error` events. */
+export async function streamAgent(
+  query: string,
+  opts: { filters?: Record<string, unknown>; signal?: AbortSignal } = {},
+  onEvent: (e: AgentStreamEvent) => void = () => {},
+): Promise<import("./types").AgentResponse | null> {
+  const r = await fetch(p("/api/agent/stream"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ query, filters: opts.filters || {} }),
+    signal: opts.signal,
+  });
+  if (!r.ok || !r.body) return null;
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    reader = r.body.getReader();
+  } catch { return null; }
+  const dec = new TextDecoder();
+  let buf = "", final: import("./types").AgentResponse | null = null;
+  const emit = (name: string, data: Record<string, unknown>) => {
+    const s = (v: unknown) => (typeof v === "string" ? v : "");
+    const n = (v: unknown) => (typeof v === "number" ? v : undefined);
+    switch (name) {
+      case "reasoning":
+        if (s(data.text)) { onEvent({ type: "reasoning", text: s(data.text) }); onEvent({ type: "progress", stage: "reasoning", detail: s(data.text) }); }
+        break;
+      case "task_started":
+        onEvent({ type: "task_started", id: s(data.id), label: s(data.label) });
+        onEvent({ type: "progress", stage: "task", detail: s(data.label) });
+        break;
+      case "task_done":
+        onEvent({ type: "task_done", id: s(data.id), label: s(data.label), count: n(data.count) });
+        break;
+      case "tool_started":
+        onEvent({ type: "tool_started", tool: s((data as Record<string, unknown>).tool), query: s((data as Record<string, unknown>).query) });
+        onEvent({ type: "progress", stage: "tool", detail: s((data as Record<string, unknown>).tool) });
+        break;
+      case "tool_completed":
+        onEvent({
+          type: "tool_completed",
+          tool: s((data as Record<string, unknown>).tool),
+          status: s((data as Record<string, unknown>).status) || undefined,
+          count: n((data as Record<string, unknown>).count),
+        });
+        break;
+      case "answer_complete": {
+        const payload = (data.payload || data) as import("./types").AgentResponse;
+        final = payload;
+        onEvent({ type: "answer_complete", payload });
+        break;
+      }
+      case "error":
+        onEvent({ type: "error", code: s((data as Record<string, unknown>).code) || "FAILED" });
+        throw new Error(`AGENT:${s((data as Record<string, unknown>).code) || "FAILED"}`);
+      default:
+        break;
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() || "";
+    for (const part of parts) {
+      const ev = part.match(/^event:\s*([A-Za-z_]+)\s*\ndata:\s*([\s\S]*)\s*$/m);
+      if (!ev) continue;
+      try { emit(ev[1], JSON.parse(ev[2])); }
+      catch (e) {
+        const msg = (e as Error)?.message || "";
+        if (msg.startsWith("AGENT:")) throw new Error(msg.slice(6));
+        /* keep streaming */
+      }
+    }
+  }
+  // Flush trailing buffered event (no trailing blank line).
+  if (buf.trim()) {
+    const ev = buf.match(/^event:\s*([A-Za-z_]+)\s*\ndata:\s*([\s\S]*)\s*$/m);
+    if (ev) {
+      try { emit(ev[1], JSON.parse(ev[2])); } catch (_e) { /* ignore */ }
+    }
+  }
+  return final;
+}
+
 export function safeHttp(url: unknown): string | null {
   try {
     const u = new URL(String(url || ""), "http://localhost");
     return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
-  } catch { return null; }
+  } catch (_e) { return null; }
 }
 
 export function safeImg(url: unknown): string | null {

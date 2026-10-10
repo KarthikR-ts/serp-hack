@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, Bag, Briefcase, Compass, BookOpen, GraduationCap, Newspaper,
 } from "@phosphor-icons/react";
-import { api, streamChat } from "../lib/api";
-import type { AgentPresentation, AgentResponse, ApiResult, ChatResponse, RunData } from "../lib/types";
+import { api, streamAgent, streamChat } from "../lib/api";
+import type { AgentPresentation, AgentResponse, ApiResult, ChatResponse, RunData, TaskSection } from "../lib/types";
 import { fmtInt } from "../lib/format";
 import { TopBar } from "../components/TopBar";
 import { Sidebar } from "../components/Sidebar";
 import { Composer } from "../components/Composer";
+import { ActionButton } from "../components/ActionButton";
 import { RouteMap } from "../components/RouteMap";
+import { ReasoningTrace } from "../components/ReasoningTrace";
 import { EvidenceMargin } from "../components/EvidenceMargin";
 import { CommandPalette } from "../components/CommandPalette";
 import { SlotPrompt } from "../components/SlotPrompt";
@@ -20,14 +22,15 @@ import {
 import {
   JobRow, NewsItem, PageRow, PaperEntry, ProductTile, VideoCard, detectKind,
 } from "../components/ResultCards";
+import SummaryDigest, { digestTakeaways } from "../components/SummaryDigest";
 
 const GOALS = [
-  { label: "Compare products", sub: "Price, specs, tradeoffs", template: "Compare products: ___ vs ___", icon: Bag, span: true },
-  { label: "Find roles", sub: "Internships and jobs", template: "Find software engineering internships in Bengaluru", icon: Briefcase, span: false },
-  { label: "Research a topic", sub: "Papers, news, context", template: "Research ", icon: BookOpen, span: false },
-  { label: "Learning plan", sub: "Ordered, with sources", template: "Build a learning plan for ", icon: GraduationCap, span: false },
-  { label: "Plan a trip", sub: "Stays, flights, places", template: "Plan a 4 day trip to ", icon: Compass, span: false },
-  { label: "What changed", sub: "Fresh news and trends", template: "What changed in  recently?", icon: Newspaper, span: false },
+  { label: "Compare products", sub: "Spec matrix, teardowns, thermal limits", template: "Compare products: ___ vs ___", icon: Bag, span: false },
+  { label: "Find roles or internships", sub: "Direct portals, hiring teams", template: "Find software engineering internships in Bengaluru", icon: Briefcase, span: false },
+  { label: "Research a topic", sub: "Patents, arXiv, peer rebuttals", template: "Research ", icon: BookOpen, span: false },
+  { label: "Build a learning plan", sub: "Syllabi, papers, exercises", template: "Build a learning plan for ", icon: GraduationCap, span: false },
+  { label: "Plan a trip", sub: "Transit, gems, advisories", template: "Plan a 4 day trip to ", icon: Compass, span: false },
+  { label: "Check what’s changed", sub: "Delta diffs, filings, mandates", template: "What changed in  recently?", icon: Newspaper, span: false },
 ];
 
 const TRY = [
@@ -67,6 +70,7 @@ export default function Workspace() {
   const [online, setOnline] = useState(true);
   const [flashEid, setFlashEid] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [trace, setTrace] = useState<string[]>([]);
   const [railOpen, setRailOpen] = useState(false);
   const [inspOpen, setInspOpen] = useState(false);
   const [palOpen, setPalOpen] = useState(false);
@@ -78,7 +82,7 @@ export default function Workspace() {
   const goHome = useCallback(() => {
     aborter.current?.abort();
     pending.current = null;
-    setQuery(""); setRun(null); setPlanPreview(null);
+    setQuery(""); setRun(null); setPlanPreview(null); setTrace([]);
     setPhase("idle"); setProgress("Ready"); setErr(null);
   }, []);
   useEffect(() => {
@@ -91,8 +95,25 @@ export default function Workspace() {
     try {
       setHist(JSON.parse(sessionStorage.getItem("serp_hist") || "[]"));
       const th = localStorage.getItem("serp_theme");
-      if (th) { setTheme(th); document.documentElement.dataset.theme = th; }
+      if (th === "light" || th === "dark") {
+        setTheme(th);
+        document.documentElement.dataset.theme = th;
+      } else {
+        setTheme("system");
+        delete document.documentElement.dataset.theme;
+      }
     } catch { /* private mode */ }
+    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const follow = () => {
+      try {
+        if ((localStorage.getItem("serp_theme") || "system") === "system") {
+          if (mq?.matches) document.documentElement.dataset.theme = "dark";
+          else delete document.documentElement.dataset.theme;
+        }
+      } catch { /* ignore */ }
+    };
+    follow();
+    mq?.addEventListener?.("change", follow);
     const on = () => setOnline(navigator.onLine);
     window.addEventListener("online", on);
     window.addEventListener("offline", on);
@@ -107,14 +128,23 @@ export default function Workspace() {
       goHome();
     };
     window.addEventListener("keydown", keys);
-    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); window.removeEventListener("keydown", keys); };
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", on); window.removeEventListener("keydown", keys); mq?.removeEventListener?.("change", follow); };
   }, [goHome]);
 
   const cycleTheme = () => {
     const next = theme === "dark" ? "light" : theme === "light" ? "system" : "dark";
     setTheme(next);
-    document.documentElement.dataset.theme = next;
     try { localStorage.setItem("serp_theme", next); } catch { /* ignore */ }
+    if (next === "system") {
+      delete document.documentElement.dataset.theme;
+      try {
+        if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      } catch { /* ignore */ }
+    } else {
+      document.documentElement.dataset.theme = next;
+    }
   };
 
   const pushHist = (q: string, kind: string) => {
@@ -144,14 +174,36 @@ export default function Workspace() {
     }
     setRun(null); setPlanPreview(null); setVisible(10);
     setSelected(new Map()); setFilterVertical(null); setFilters(flt);
-    setDismissed(new Set()); setErr(null);
+    setDismissed(new Set()); setErr(null); setTrace([]);
     setPhase("running"); setProgress("Understanding your question");
     pushHist(text, kind);
     document.getElementById("answer")?.scrollIntoView({ block: "start", behavior: "smooth" });
     try {
       if (kind === "agent") {
-        const data = await api.agent(text, { filters: flt, signal: aborter.current?.signal });
-        setRun({ kind, data });
+        const push = (t: string) => setTrace((prev) => [...prev.slice(-30), t].filter(Boolean));
+        try {
+          const streamed = await streamAgent(text, { filters: flt, signal: aborter.current?.signal }, (e) => {
+            if (e.type === "reasoning") push(e.text);
+            else if (e.type === "task_started") { push(`Started: ${e.label || e.id}`); if (e.label) setProgress(e.label); }
+            else if (e.type === "task_done") push(`Done: ${e.label || e.id}${e.count != null ? ` (${e.count})` : ""}`);
+            else if (e.type === "tool_started") setProgress(`Searching ${e.tool}${e.query ? `: ${e.query.slice(0, 80)}` : ""}`);
+            else if (e.type === "tool_completed") setProgress(`${e.tool} ${e.status || "done"}${e.count != null ? ` · ${e.count}` : ""}`);
+            else if (e.type === "progress" && e.detail) setProgress(e.detail);
+          });
+          if (streamed) setRun({ kind, data: streamed });
+          else {
+            const data = await api.agent(text, { filters: flt, signal: aborter.current?.signal });
+            if (data.reasoning?.length) setTrace(data.reasoning.filter(Boolean));
+            setRun({ kind, data });
+          }
+        } catch (e) {
+          if ((e as Error).name === "AbortError") throw e;
+          // SSE error event carries backend code (e.g. LIMIT/NOKEY); fall back once.
+          if (["LIMIT", "NOKEY"].includes((e as Error).message)) throw e;
+          const data = await api.agent(text, { filters: flt, signal: aborter.current?.signal });
+          if (data.reasoning?.length) setTrace(data.reasoning.filter(Boolean));
+          setRun({ kind, data });
+        }
       } else {
         try {
           const preview = await api.intents(text, aborter.current?.signal);
@@ -219,10 +271,31 @@ export default function Workspace() {
   };
 
   const data = run?.data as (ChatResponse & AgentResponse) | undefined;
+  const agentSections: TaskSection[] = (data as AgentResponse)?.sections || [];
+  const agentReasoning = (data as AgentResponse)?.reasoning || [];
   const sources = data?.sources || [];
   const route = data?.route || [];
   const constraints = (data as ChatResponse)?.constraints || (data as AgentResponse)?.constraints || {};
   const busy = phase === "running" || phase === "planning";
+  const totalCount = (() => {
+    const direct = (data as AgentResponse)?.results_count ?? (data as ChatResponse)?.results_count;
+    if (typeof direct === "number") return direct;
+    if (agentSections.length) {
+      const sum = agentSections.reduce((n, s) => n + (typeof s.results_count === "number" ? s.results_count : 0), 0);
+      if (sum > 0) return sum;
+      const picks = agentSections.reduce((n, s) => n + (s.presentation?.picks?.length || s.presentation?.papers?.length || 0), 0);
+      if (picks > 0) return picks;
+    }
+    const pres = (data as AgentResponse)?.presentation;
+    const fallback = (pres?.picks?.length || pres?.papers?.length || pres?.places?.length || pres?.jobs?.length || pres?.results?.length || 0);
+    return fallback > 0 ? fallback : null;
+  })();
+  const statusText = busy ? progress : phase === "error" ? "Needs attention" : phase === "done" ? (totalCount != null ? `Done · ${fmtInt(totalCount)} results` : "Done") : "Ready";
+
+  const widen = () => {
+    const q = `${data?.query ?? query} wider search`;
+    startRun(q, run?.kind || "chat", "auto", false, {});
+  };
 
   const refine = (id: string) => {
     const q = data?.query ?? query;
@@ -247,15 +320,16 @@ export default function Workspace() {
   return (
     <>
       <TopBar
-        status={{ busy, error: phase === "error", text: busy ? progress : phase === "error" ? "Needs attention" : phase === "done" ? `Done · ${data?.results_count ?? (data as ChatResponse)?.results_count ?? ""} results`.trim() : "Ready" }}
+        status={{ busy, error: phase === "error", text: statusText }}
         sourceCount={sources.length}
         onPalette={() => setPalOpen(true)}
         onToggleRail={() => setRailOpen((o) => !o)}
         onToggleInspector={() => setInspOpen((o) => !o)}
         theme={theme} onTheme={cycleTheme}
+        inspectorOpen={inspOpen}
       />
 
-      <div className="mx-auto grid w-full max-w-[1400px] grid-cols-1 gap-6 px-3 pt-4 sm:px-5 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,760px)_minmax(0,1fr)]">
+      <div className="mx-auto grid w-full max-w-[1340px] grid-cols-1 gap-8 px-4 pt-4 lg:px-8 lg:grid-cols-[248px_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,760px)_320px]">
         <div className={`${railOpen ? "block" : "hidden"} lg:block`}>
           <Sidebar
             open
@@ -270,19 +344,19 @@ export default function Workspace() {
           />
         </div>
 
-        <main className="min-w-0 pb-24" id="main">
+        <main className="min-w-0 max-w-[760px] pb-24" id="main">
           {!hasRun && (
-            <section aria-label="Ask" className="pb-2 pt-4 sm:pt-8">
-              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-2)]">
-                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--live)]" />
-                Universal web intelligence
-              </p>
-              <h1 className="m-0 max-w-[16ch] text-balance text-[clamp(30px,4.6vw,52px)] font-bold leading-[1.04] tracking-[-0.03em]">
-                What do you want to figure out?
-              </h1>
-              <p className="mb-5 mt-3 max-w-[56ch] text-[15.5px] leading-relaxed text-[var(--ink-2)]">
-                Ask in plain words. Agent picks sources and shows each step.
-              </p>
+            <section aria-label="Ask" className="pb-2 pt-4 sm:pt-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h1 className="m-0 text-balance text-[clamp(31px,4vw,39px)] font-bold leading-[44px] tracking-tight text-[var(--primary)]">
+                    What do you want to find out?
+                  </h1>
+                  <p className="font-reading mb-5 mt-2 max-w-xl text-[15px] leading-[24px] text-[var(--ink-2)]">
+                    Synthesizing across multi-vertical web indexes, patent vaults, academic archives, and discourse threads.
+                  </p>
+                </div>
+              </div>
 
               <Composer
                 value={query} onChange={setQuery}
@@ -293,32 +367,68 @@ export default function Workspace() {
                 onStop={() => aborter.current?.abort()}
               />
 
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Start from a goal">
+              <div className="mt-4 flex flex-col gap-1 rounded-[12px] border border-[var(--line)] bg-[var(--surface-low)] px-4 py-3 md:flex-row md:items-center md:justify-between" aria-label="Likely route">
+                <div className="flex flex-wrap items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-2)]">
+                  <span>⌁ Likely route:</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-2.5 py-1 text-[12px] font-medium normal-case tracking-normal text-[var(--ink)]"><span className="h-2 w-2 rounded-full bg-[var(--fam-commerce)]" /> Products <span className="text-[11px] text-[var(--ink-3)]">(Commerce API)</span></span>
+                  <span aria-hidden="true" className="text-[var(--control)]">--</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-2.5 py-1 text-[12px] font-medium normal-case tracking-normal text-[var(--ink)]"><span className="h-2 w-2 rounded-full bg-[var(--fam-web)]" /> Web <span className="text-[11px] text-[var(--ink-3)]">(Organic Index)</span></span>
+                  <span aria-hidden="true" className="text-[var(--control)]">--</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--paper)] px-2.5 py-1 text-[12px] font-medium normal-case tracking-normal text-[var(--ink)]"><span className="h-2 w-2 rounded-full bg-[var(--fam-research)]" /> Discussions <span className="text-[11px] text-[var(--ink-3)]">(Reddit & Forums)</span></span>
+                </div>
+                <span className="text-[12px] font-medium text-[var(--secondary)]">Customize pipeline</span>
+              </div>
+
+              <div className="mt-6 flex items-center justify-between">
+                <h2 className="text-[20px] font-bold text-[var(--primary)]">Start from a goal</h2>
+                <span className="text-[12px] text-[var(--ink-2)]">Pre-tuned multi-step pipelines</span>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Start from a goal">
                 {GOALS.map((g) => (
                   <button
                     key={g.label} type="button"
                     onClick={() => { setQuery(g.template); document.getElementById("q")?.focus(); }}
-                    className={`spot flex items-center gap-3 rounded-[14px] border border-[var(--line)] bg-[var(--surface)] p-3.5 text-left transition hover:border-[var(--control)] active:scale-[0.98] ${g.span ? "sm:col-span-2 sm:p-4" : ""}`}
+                    className="group flex flex-col justify-between gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-4 text-left shadow-sm transition hover:shadow-md"
                   >
-                    <span aria-hidden="true" className="grid h-9 w-9 flex-none place-items-center rounded-[10px] border border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink-2)]">
-                      <g.icon size={18} weight="regular" />
+                    <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-[8px] bg-[var(--surface-2)] text-[var(--primary)]">
+                      <g.icon size={22} weight="regular" />
                     </span>
                     <span className="min-w-0">
-                      <strong className="block truncate text-[14px] font-semibold tracking-tight">{g.label}</strong>
-                      <span className="block truncate text-[12.5px] text-[var(--ink-3)]">{g.sub}</span>
+                      <strong className="block text-[17px] font-bold tracking-tight text-[var(--primary)]">{g.label}</strong>
+                      <span className="font-reading block text-[15px] leading-[24px] text-[var(--ink-2)]">{g.sub}</span>
                     </span>
-                    <ArrowRight size={15} aria-hidden="true" className="ml-auto flex-none text-[var(--ink-3)]" />
+                    <ArrowRight size={15} aria-hidden="true" className="text-[var(--ink-3)] transition group-hover:translate-x-1" />
                   </button>
                 ))}
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2" aria-label="Suggestions">
-                <span className="text-[12.5px] text-[var(--ink-3)]">{hist.length ? "Recent:" : "Try:"}</span>
-                {(hist.length ? hist.slice(0, 3).map((h) => h.q) : TRY).map((t) => (
-                  <button key={t} type="button" className="chip !min-h-[36px]" onClick={() => startRun(t, "agent")}>
-                    {t.slice(0, 52)}
-                  </button>
-                ))}
+              <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-12">
+                <div className="lg:col-span-7">
+                  <h2 className="text-[20px] font-bold text-[var(--primary)]">Recent research</h2>
+                  <div className="mt-2 space-y-1 rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-2 shadow-sm">
+                    {(hist.length ? hist.slice(0, 3).map((h) => ({ t: h.q, s: h.kind })) : TRY.map((t) => ({ t, s: "recent" }))).map((x, i) => (
+                      <button key={i} type="button" className="flex w-full items-center justify-between rounded-[6px] p-3 text-left transition hover:bg-[var(--surface-2)]" onClick={() => startRun(x.t, "agent")}>
+                        <span className="min-w-0"><strong className="block truncate text-[15px] text-[var(--primary)]">{x.t.slice(0, 52)}</strong>
+                        <span className="block truncate text-[12px] text-[var(--ink-2)]">{x.s} · citations linked</span></span>
+                        <span className="font-mono text-[12px] text-[var(--secondary)]">›</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[12px] bg-[var(--primary)] p-6 text-white shadow-md lg:col-span-5">
+                  <p className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-[12px] font-medium text-[var(--inverse-primary)]">✓ Epistemic Provenance Guarantee</p>
+                  <h3 className="mt-2 text-[25px] font-bold leading-[32px]">Autonomous, not unaccountable.</h3>
+                  <p className="mt-1 text-[15px] leading-[22px] text-[var(--on-primary-container)]">Every assertion is backed by immutable web-archived snapshots and exact character-range highlights.</p>
+                  <p className="mt-3 font-mono text-[12px] text-[var(--on-primary-container)]">Haystack 2.0 Graph Operator · Inspect active graph →</p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-start gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--surface-low)] p-4">
+                <span aria-hidden="true">🛡</span>
+                <p className="font-reading m-0 text-[15px] leading-[24px] text-[var(--ink-2)]">
+                  Ask in your own words. The agent chooses where to look. <strong className="text-[var(--primary)]">Read-only:</strong> reads and compares, never purchases or applies.
+                  <span className="ml-3 font-mono text-[12px] text-[var(--ink-2)]">ZERO-TRANSACTION GUARD ●</span>
+                </p>
               </div>
             </section>
           )}
@@ -375,6 +485,7 @@ export default function Workspace() {
           {phase === "running" && !data && (
             <div className="mt-4 space-y-3" aria-live="polite">
               <p className="text-[14px] text-[var(--ink-2)]">{progress}…</p>
+              {trace.length > 0 && <ReasoningTrace lines={trace} live />}
               <SkeletonRun />
             </div>
           )}
@@ -388,6 +499,9 @@ export default function Workspace() {
               <RunHeader query={data.query} kind={run!.kind} mode={(data as ChatResponse).mode} />
               {route.length > 0 && (
                 <RouteMap route={route} budget={data.budget} onFilter={(v) => setFilterVertical((cur) => (cur === v ? null : v))} activeVertical={filterVertical} />
+              )}
+              {agentReasoning.length > 0 && (
+                <ReasoningTrace lines={agentReasoning} live={phase === "running"} />
               )}
               <AnswerBlock data={data} onRetry={() => startRun(data.query, run!.kind)} />
               {(run!.kind === "agent" && (data as AgentResponse).status === "clarify") ? (
@@ -405,20 +519,65 @@ export default function Workspace() {
                     onSkip={() => startRun(data.query, "chat", "auto", false, filters)}
                   />
                 )
+              ) : agentSections.length > 1 ? (
+                <div className="space-y-6">
+                  {agentSections.map((sec, i) => (
+                    <section key={`${sec.task_id || i}-${sec.title.slice(0, 32)}`} aria-label={sec.title} className="space-y-3">
+                      <h3 className="text-[16px] font-bold tracking-tight text-[var(--primary)]">
+                        {sec.title.slice(0, 140)}
+                        {sec.results_count != null && (
+                          <span className="tnum ml-2 rounded-full border border-[var(--line)] px-2 py-0.5 font-mono text-[11px] font-normal text-[var(--ink-3)]">{sec.results_count}</span>
+                        )}
+                      </h3>
+                      <SummaryDigest
+                        summary={i === 0 ? data.summary : undefined}
+                        takeaways={digestTakeaways(sec.presentation, [])}
+                        counts={`${fmtInt(sec.results_count ?? 0)} results · ${fmtInt(sec.sources?.length ?? 0)} sources · ${fmtInt(sec.route?.length ?? route.length)} searches`}
+                        compact
+                      />
+                      {sec.presentation ? (
+                        <PresentationView
+                          pres={sec.presentation}
+                          filterVertical={filterVertical} flashEid={flashEid}
+                          onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
+                          query={data.query} onWiden={widen}
+                        />
+                      ) : (
+                        <p className="text-[14px] text-[var(--ink-2)]">No results in this section.</p>
+                      )}
+                      <RefineRow refinements={data.refinements || []} onRefine={refine} />
+                    </section>
+                  ))}
+                </div>
               ) : (data as AgentResponse).presentation ? (
-                <PresentationView
-                  pres={(data as AgentResponse).presentation!}
-                  filterVertical={filterVertical} flashEid={flashEid}
-                  onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
-                />
+                <>
+                  <SummaryDigest
+                    summary={data.summary}
+                    takeaways={digestTakeaways((data as AgentResponse).presentation, (data as ChatResponse).results || [])}
+                    counts={`${fmtInt(totalCount ?? 0)} results · ${fmtInt(sources.length)} sources · ${fmtInt(route.length > 0 ? route.length : (data?.budget?.calls_used ?? 0))} searches`}
+                  />
+                  <PresentationView
+                    pres={(data as AgentResponse).presentation!}
+                    filterVertical={filterVertical} flashEid={flashEid}
+                    onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
+                    query={data.query} onWiden={widen}
+                  />
+                </>
               ) : (
-                <ResultsList
-                  results={(data as ChatResponse).results || []}
-                  visible={visible} setVisible={setVisible}
-                  filterVertical={filterVertical} flashEid={flashEid}
-                  onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
-                  query={data.query}
-                />
+                <>
+                  <SummaryDigest
+                    summary={data.summary}
+                    takeaways={digestTakeaways(undefined, (data as ChatResponse).results || [])}
+                    counts={`${fmtInt(totalCount ?? 0)} results · ${fmtInt(sources.length)} sources · ${fmtInt(route.length > 0 ? route.length : (data?.budget?.calls_used ?? 0))} searches`}
+                  />
+                  <ResultsList
+                    results={(data as ChatResponse).results || []}
+                    visible={visible} setVisible={setVisible}
+                    filterVertical={filterVertical} flashEid={flashEid}
+                    onSelect={onSelect} onSave={saveItem} dismissed={dismissed} onDismiss={dismiss}
+                    query={data.query} onWiden={widen}
+                  />
+                </>
               )}
               <RefineRow refinements={data.refinements || []} onRefine={refine} />
               <p className="tnum font-mono text-[11.5px] text-[var(--ink-3)]" aria-live="polite">{progress}</p>
@@ -485,20 +644,29 @@ function FilterChips({ constraints, onRemove }: { constraints: Record<string, un
 
 function RunHeader({ query, kind, mode }: { query: string; kind: string; mode?: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <span aria-hidden="true" className="grid h-8 w-8 flex-none place-items-center rounded-full border border-[var(--line)] bg-[var(--surface)] text-[13px] text-[var(--ink-2)]">✳</span>
-      <div className="min-w-0">
-        <p className="tnum m-0 font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">You</p>
-        <h2 className="m-0 mt-0.5 text-balance text-[18px] font-semibold tracking-tight">{query.slice(0, 220)}</h2>
+    <header className="flex items-start gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-4 shadow-sm">
+      <span aria-hidden="true" className="grid h-9 w-9 flex-none place-items-center rounded-[6px] bg-[var(--surface-2)] text-[var(--secondary)]">◉</span>
+      <div className="min-w-0 flex-1">
+        <p className="m-0 text-[12px] font-semibold uppercase tracking-wider text-[var(--ink-2)]">Inquest · Analytical Dossier</p>
+        <h2 className="m-0 mt-0.5 text-balance text-[20px] font-bold leading-[28px] tracking-tight text-[var(--primary)]">“{query.slice(0, 220)}”</h2>
         <p className="mt-1.5 flex flex-wrap gap-1.5">
-          {mode && mode !== "auto" && <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] capitalize text-[var(--ink-2)]">{mode}</span>}
-          <span className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 font-mono text-[11px] text-[var(--ink-2)]">
+          {mode && mode !== "auto" && <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] capitalize text-[var(--ink-2)]">{mode}</span>}
+          <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] text-[var(--ink-2)]">
             {kind === "agent" ? "Autonomous agent" : "Routed research"}
           </span>
         </p>
       </div>
-    </div>
+    </header>
   );
+}
+
+function stripDigest(summary?: string): string {
+  if (!summary) return "";
+  const lines = summary
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^\[.+\]$/.test(l));
+  return lines.slice(0, 3).join(" ").slice(0, 500);
 }
 
 function AnswerBlock({ data, onRetry }: { data: ChatResponse & AgentResponse; onRetry: () => void }) {
@@ -506,10 +674,15 @@ function AnswerBlock({ data, onRetry }: { data: ChatResponse & AgentResponse; on
   const comp = (data as ChatResponse).completeness;
   const intents = ((data as ChatResponse).analysis?.intent || (data as AgentResponse).legacy_intents || []).join(" ");
   return (
-    <div>
-      <p className="tnum font-mono text-[11px] uppercase tracking-[0.12em] text-[var(--ink-3)]">Answer</p>
-      {data.summary && (
-        <p className="font-reading mt-1 max-w-[68ch] text-[19px] leading-[1.6]">{data.summary.slice(0, 900)}</p>
+    <div className="rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-6 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded bg-[var(--primary-container)] px-2 py-0.5 text-[12px] font-bold uppercase text-white">Executive Verdict</span>
+        {typeof conf === "object" && conf && <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-[12px] font-semibold text-[var(--status-caution)]">Confidence: {conf.level}</span>}
+      </div>
+      {((data as AgentResponse).summary_short || stripDigest(data.summary)) && (
+        <p className="font-reading mt-2 max-w-[66ch] text-left text-[19px] leading-[30px] text-[var(--primary)]">
+          {(data as AgentResponse).summary_short || stripDigest(data.summary)}
+        </p>
       )}
       {typeof conf === "object" && conf && <ConfidenceLine level={conf.level} reasons={conf.reasons || []} />}
       {typeof conf === "string" && <p className="mt-2 text-[13.5px] text-[var(--ink-2)]">Confidence: {conf}.</p>}
@@ -524,7 +697,7 @@ function AnswerBlock({ data, onRetry }: { data: ChatResponse & AgentResponse; on
       {/FINANCE|finance_snapshot/.test(`${intents} ${(data as AgentResponse).presentation?.type || ""}`) && (
         <p className="mt-1.5 text-[12.5px] font-semibold text-[var(--caution)]">Information only, not financial advice.</p>
       )}
-      {/apply to|book (me|us|a |my)|buy .* for me|\bpurchase\b/i.test(data.query || "") && (
+      {/apply to|book\s+(me|us|a|my|the|flight|hotel|ticket|trip)|\bbuy\b|\bpurchase\b/i.test(data.query || "") && (
         <p className="surface mt-2 p-3 text-[13.5px]">
           This assistant reads and compares. It does not buy, apply or book. Open the listings instead.
         </p>
@@ -533,18 +706,18 @@ function AnswerBlock({ data, onRetry }: { data: ChatResponse & AgentResponse; on
   );
 }
 
-function ResultsList({ results, visible, setVisible, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss, query }: {
+function ResultsList({ results, visible, setVisible, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss, query, onWiden }: {
   results: ApiResult[]; visible: number; setVisible: (n: number) => void;
   filterVertical: string | null; flashEid: string | null;
   onSelect: (r: ApiResult, key: string, on: boolean) => void; onSave: (r: Record<string, unknown>) => void;
-  dismissed: Set<string>; onDismiss: (r: ApiResult) => void; query: string;
+  dismissed: Set<string>; onDismiss: (r: ApiResult) => void; query: string; onWiden?: () => void;
 }) {
   const key = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
   const list = results.filter((r) => !dismissed.has(key(r)) && (!filterVertical || (r._engine || "google_search") === filterVertical));
   const shown = list.slice(0, visible);
   const shopping = list.some((r) => detectKind(r) === "product");
 
-  if (!list.length) return <EmptyResults query={query} onWiden={() => {}} />;
+  if (!list.length) return <EmptyResults query={query} onWiden={onWiden || (() => setVisible(20))} />;
 
   return (
     <section aria-label="Results">
@@ -612,24 +785,30 @@ function ResultsList({ results, visible, setVisible, filterVertical, flashEid, o
   );
 }
 
-function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss }: {
+function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, dismissed, onDismiss, query, onWiden }: {
   pres: AgentPresentation; filterVertical: string | null; flashEid: string | null;
   onSelect: (r: ApiResult, key: string, on: boolean) => void;
   onSave: (r: Record<string, unknown>) => void;
   dismissed: Set<string>; onDismiss: (r: ApiResult) => void;
+  query?: string; onWiden?: () => void;
 }) {
   const key = (r: ApiResult) => `${r.url || r.application_url || ""}|${r.title || r.name || ""}`;
+  const flashCls = (r: ApiResult) => (flashEid && (r.evidence_ids || []).includes(flashEid) ? " flash" : "");
   if (pres.type === "shopping_top2") {
+    const picks = (pres.picks || []).slice(0, 5).filter((p) => !dismissed.has(key(p)));
     return (
       <section aria-label="Top picks">
-        <h3 className="mb-1 text-[14.5px] font-semibold">Top picks <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{(pres.picks || []).length}</span></h3>
+        <h3 className="mb-1 text-[14.5px] font-semibold">Top picks <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{picks.length}</span></h3>
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          {(pres.picks || []).slice(0, 4).filter((p) => !dismissed.has(key(p))).map((item, i) => (
-            <ProductTile key={i} r={{ ...item, seller: String(item.seller || ""), _engine: "google_shopping" }} index={i} featured={i === 0}
-              onSelect={(r, _ii, on) => onSelect(r, `pick-${i}`, on)}
-              onDismiss={() => onDismiss(item)} onSave={() => onSave({ title: item.title, url: item.url })} />
+          {picks.map((item, i) => (
+            <div key={i} className={flashCls(item)}>
+              <ProductTile r={{ ...item, seller: String(item.seller || ""), _engine: "google_shopping" }} index={i} featured={i === 0}
+                onSelect={(r, _ii, on) => onSelect(r, `pick-${i}`, on)}
+                onDismiss={() => onDismiss(item)} onSave={() => onSave({ title: item.title, url: item.url })} />
+            </div>
           ))}
         </div>
+        {pres.deals_note && <p className="mt-2 text-[13.5px] text-[var(--ink-2)]">{pres.deals_note.slice(0, 400)}</p>}
       </section>
     );
   }
@@ -674,9 +853,33 @@ function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, di
     );
   }
   if (pres.type === "deep_dive") {
+    const topPicks = (pres.top_picks || []).slice(0, 3);
     return (
       <div className="space-y-4">
         {pres.summary && <p className="font-reading max-w-[68ch] text-[17px] leading-[1.65]">{pres.summary.slice(0, 600)}</p>}
+        {topPicks.length > 0 && (
+          <section aria-label="Top picks">
+            <h3 className="mb-1 text-[14.5px] font-semibold">Top picks <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{topPicks.length}</span></h3>
+            <ol className="m-0 list-none space-y-2.5 p-0">
+              {topPicks.map((p, i) => (
+                <li key={i} className="rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-4 shadow-sm">
+                  <p className="tnum m-0 font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">Pick {i + 1}{typeof p.citations === "number" ? ` · Cited by ${fmtInt(p.citations)}` : ""}</p>
+                  <h4 className="m-0 mt-1 text-[15.5px] font-semibold tracking-tight">
+                    {p.url ? (
+                      <a href={p.url} target="_blank" rel="noopener noreferrer nofollow" className="text-[var(--ink)] no-underline hover:underline">{p.title.slice(0, 140)}</a>
+                    ) : p.title.slice(0, 140)}
+                  </h4>
+                  {p.pick_reason && <p className="mt-1 max-w-[70ch] text-[14px] text-[var(--ink-2)]">{p.pick_reason.slice(0, 300)}</p>}
+                  {p.url && (
+                    <p className="m-0 mt-2">
+                      <a href={p.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex items-center gap-1 text-[13px] font-semibold text-[var(--ink)]">Read paper →</a>
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         {(pres.findings || []).length > 0 && (
           <section aria-label="Key findings">
             <h3 className="mb-1 text-[14.5px] font-semibold">Key findings</h3>
@@ -701,9 +904,50 @@ function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, di
     );
   }
   if (pres.type === "travel_choices") {
+    const bookActions = (pres.actions || []).filter((a) => /^(book_flight|book_hotel|tickets)/.test(String(a.kind || "")));
+    const topPlaces = (pres.top_places || []).slice(0, 5);
     return (
       <div className="space-y-4">
         <p className="text-[13.5px] text-[var(--ink-2)]">{pres.note || "Planned and ready. Booking happens on provider sites."}</p>
+        {(pres.itinerary || []).length > 0 && (
+          <section aria-label="Day by day itinerary">
+            <h3 className="mb-1 text-[14.5px] font-semibold">Day by day</h3>
+            <ol className="m-0 list-none space-y-2.5 p-0">
+              {(pres.itinerary || []).map((d, i) => (
+                <li key={i} className="rounded-[12px] border border-[var(--line)] bg-[var(--paper)] p-4 shadow-sm">
+                  <p className="tnum m-0 font-mono text-[11px] uppercase tracking-wider text-[var(--ink-3)]">{d.day.slice(0, 40)}</p>
+                  <h4 className="m-0 mt-0.5 text-[15px] font-semibold tracking-tight">{d.title.slice(0, 120)}</h4>
+                  <ul className="m-2 list-none space-y-1 p-0 text-[14px]">
+                    {(d.items || []).map((it, j) => (
+                      <li key={j} className="text-[var(--ink-2)]">
+                        {it.url ? (
+                          <a href={it.url} target="_blank" rel="noopener noreferrer nofollow" className="font-semibold text-[var(--ink)]">{it.name.slice(0, 100)}</a>
+                        ) : <strong className="font-semibold text-[var(--ink)]">{it.name.slice(0, 100)}</strong>}
+                        {it.note && <span> — {it.note.slice(0, 160)}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                  {d.note && <p className="m-0 mt-1 text-[13.5px] text-[var(--ink-2)]">{d.note.slice(0, 240)}</p>}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        {topPlaces.length > 0 && (
+          <section aria-label="Top places">
+            <h3 className="mb-1 text-[14.5px] font-semibold">Top places <span className="tnum font-mono text-[11px] font-normal text-[var(--ink-3)]">{topPlaces.length}</span></h3>
+            <ol className="m-0 space-y-1.5 pl-5 text-[14.5px]">
+              {topPlaces.map((pl, i) => (
+                <li key={i}>
+                  {pl.url ? (
+                    <a href={pl.url} target="_blank" rel="noopener noreferrer nofollow" className="font-semibold">{pl.name.slice(0, 100)}</a>
+                  ) : <strong>{pl.name.slice(0, 100)}</strong>}
+                  {pl.why && <span className="text-[var(--ink-2)]"> — {pl.why.slice(0, 200)}</span>}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         {( [["Flights", pres.flights], ["Hotels", pres.hotels], ["Places", pres.places]] as [string, ApiResult[] | undefined][] ).map(([label, list]) => {
           const arr = (list || []).filter((r) => !dismissed.has(key(r)));
           if (!arr.length) return null;
@@ -716,6 +960,13 @@ function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, di
             </section>
           );
         })}
+        {bookActions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3" aria-label="Book">
+            {bookActions.map((a) => (
+              <ActionButton key={a.id} action={a} compact />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -740,24 +991,35 @@ function PresentationView({ pres, filterVertical, flashEid, onSelect, onSave, di
       </section>
     );
   }
-  const list = ((pres.jobs || pres.places || pres.results || []) as ApiResult[]).filter((r) => !dismissed.has(key(r)));
-  void flashEid;
+  const all = ((pres.jobs || pres.places || pres.results || []) as ApiResult[]).filter((r) => !dismissed.has(key(r)));
+  const list = all.filter((r) => !filterVertical || String(r._engine || "") === filterVertical || detectKind(r) === filterVertical);
+  if (!list.length) {
+    return <EmptyResults query={query || ""} onWiden={onWiden || (() => {})} />;
+  }
   return (
     <section aria-label="Results">
       <div className="grid gap-0">
         {list.slice(0, 10).map((r, i) => {
           const kind = detectKind(r);
-          if (kind === "job") return <JobRow key={i} r={r} index={i}
-            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
-            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />;
-          if (kind === "product") return <ProductTile key={i} r={r} index={i}
-            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
-            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
-          if (kind === "paper") return <PaperEntry key={i} r={r} index={i}
-            onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
-            onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
-          if (kind === "video") return <VideoCard key={i} r={r} />;
-          return <PageRow key={i} r={r} index={i} onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />;
+          const flash = flashCls(r);
+          const inner = kind === "job" ? (
+            <JobRow r={r} index={i}
+              onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+              onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.application_url || r.url })} />
+          ) : kind === "product" ? (
+            <ProductTile r={r} index={i}
+              onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+              onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+          ) : kind === "paper" ? (
+            <PaperEntry r={r} index={i}
+              onSelect={(rr, _ii, on) => onSelect(rr, `g-${i}`, on)}
+              onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+          ) : kind === "video" ? (
+            <VideoCard r={r} />
+          ) : (
+            <PageRow r={r} index={i} onDismiss={() => onDismiss(r)} onSave={() => onSave({ title: r.title, url: r.url })} />
+          );
+          return <div key={i} className={flash}>{inner}</div>;
         })}
       </div>
     </section>

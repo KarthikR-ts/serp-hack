@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { Newsreader } from "next/font/google";
+import { Literata, Schibsted_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const sans = Geist({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
-const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
-// Reading serif justified: long evidence answers need sustained on-screen reading.
-// Editorial trust register, not decoration. Pairs on contrast axis with grotesk UI.
-const reading = Newsreader({
+const sans = Schibsted_Grotesk({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const mono = Schibsted_Grotesk({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
+// Stitch: Literata drives narrative synthesis + abstracts; Schibsted Grotesk governs UI chrome.
+const reading = Literata({
   subsets: ["latin"],
   variable: "--font-reading",
   display: "swap",
@@ -15,7 +13,7 @@ const reading = Newsreader({
 });
 
 export const metadata: Metadata = {
-  title: "Serp Intelligence — Ask anything, see the research",
+  title: "Intellect Engine — SerpApi × Haystack",
   description:
     "Plain-language research across jobs, products, papers, news and places. Agent shows route, sources and confidence.",
 };
@@ -26,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${sans.variable} ${mono.variable} ${reading.variable}`}>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("serp_theme");if(t==="light"||t==="dark"){document.documentElement.dataset.theme=t;}else if(matchMedia("(prefers-color-scheme: light)").matches){document.documentElement.dataset.theme="light";}}catch(e){}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("serp_theme");if(t==="light"||t==="dark"){document.documentElement.dataset.theme=t;}else if(matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.dataset.theme="dark";}}catch(e){}})();`,
           }}
         />
         <a

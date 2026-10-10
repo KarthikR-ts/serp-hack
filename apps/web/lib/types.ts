@@ -90,17 +90,40 @@ export interface ChatResponse {
 export interface AgentPresentation {
   type: string;
   picks?: ApiResult[];
+  deals_note?: string;
   levels?: Record<string, ApiResult[]>;
   quote?: ApiResult;
   headlines?: { title: string; url: string; date?: string; source?: string }[];
   disclaimer?: string; summary?: string;
   findings?: { claim: string; url: string; title: string }[];
   papers?: ApiResult[];
+  top_picks?: { title: string; url: string; citations?: number | null; pick_reason?: string }[];
   flights?: ApiResult[]; hotels?: ApiResult[]; places?: ApiResult[];
+  itinerary?: { day: string; title: string; items: { name: string; url?: string; note?: string }[]; note?: string }[];
+  top_places?: { name: string; url?: string; why?: string }[];
   note?: string; jobs?: ApiResult[]; results?: ApiResult[];
   goal?: string; actions?: Action[];
   stages?: { stage: string; topics: { title: string; url: string }[] }[];
 }
+
+export interface AgentTask {
+  id: string;
+  label: string;
+  use_case?: string;
+  status?: "pending" | "running" | "done" | "failed" | string;
+}
+
+export interface TaskSection {
+  task_id?: string;
+  title: string;
+  use_case?: string;
+  presentation?: AgentPresentation;
+  results_count?: number;
+  sources?: ApiSource[];
+  route?: RouteLine[];
+}
+
+export type ReasoningLine = string;
 
 export interface AgentResponse {
   status: "ok" | "clarify";
@@ -117,11 +140,15 @@ export interface AgentResponse {
   missing_slots?: string[];
   presentation?: AgentPresentation;
   sources?: ApiSource[]; results_count?: number;
+  tasks?: AgentTask[];
+  sections?: TaskSection[];
+  reasoning?: ReasoningLine[];
   funnel?: Funnel; route?: RouteLine[];
   confidence?: Confidence | string;
   refinements?: Refinement[]; budget?: Budget;
   research_trace?: Record<string, unknown>;
   summary?: string;
+  summary_short?: string;
 }
 
 export type RunData =
